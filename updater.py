@@ -4,6 +4,8 @@ import pickle
 import traceback
 from pathlib import Path
 
+import pandas as pd
+
 import engine as E
 
 ROOT = Path(__file__).resolve().parent
@@ -49,12 +51,20 @@ def refresh(force_results=False, log=print):
         res = prev.get("res")
         if res is None:
             raise
-    res = res.dropna(subset=["date", "home", "away", "hg", "ag"]).copy()
+    # 保存済みCSV（文字列の日付）と新規取得分（日付型）が混ざると日付列が文字列扱いになるため統一
+    res = res.copy()
+    res["date"] = pd.to_datetime(res["date"].astype(str).str.slice(0, 10), format="%Y-%m-%d", errors="coerce")
+    res["hg"] = pd.to_numeric(res["hg"], errors="coerce")
+    res["ag"] = pd.to_numeric(res["ag"], errors="coerce")
+    bad = res[["date", "home", "away", "hg", "ag"]].isna().any(axis=1).sum()
+    if bad:
+        lg(f"不正な行を除外: {bad}件")
+    res = res.dropna(subset=["date", "home", "away", "hg", "ag"]).drop_duplicates(["date", "home", "away"])
     res["comp"] = res["comp"].fillna("").astype(str)
     res["home"], res["away"] = res["home"].astype(str), res["away"].astype(str)
     res[["hg", "ag"]] = res[["hg", "ag"]].astype(int)
     res = res.sort_values("date").reset_index(drop=True)
-    lg(f"結果データ合計: {len(res)}試合")
+    lg(f"結果データ合計: {len(res)}試合（{res['date'].min():%Y/%m/%d}〜{res['date'].max():%Y/%m/%d}）")
 
     # 3) 投票率（mini は toto の同じ試合を流用）
     votes = {}
