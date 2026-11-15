@@ -1,17 +1,17 @@
 # -*- coding: utf-8 -*-
-"""最新開催回・投票率・試合結果を取り直し、モデルを再学習して data/snapshot.pkl に保存する"""
+"""取得 → 振り返り → 学習（検討要素の追加・検証）→ 予想 → 保存 をまとめて実行"""
 import pickle
 import traceback
 from pathlib import Path
 
-import pandas as pd
-
 import engine as E
+import learning as LRN
+import review as R
 
 ROOT = Path(__file__).resolve().parent
 DATA = ROOT / "data"
 SNAP = DATA / "snapshot.pkl"
-SNAP_VER = 2          # 保存形式のバージョン（古い形式は読み込まない）
+SNAP_VER = 3
 
 
 def load_snapshot():
@@ -24,7 +24,7 @@ def load_snapshot():
     return None
 
 
-def refresh(force_results=False, log=print):
+def refresh(force_results=False, password=None, log=print):
     prev = load_snapshot() or {}
     if prev.get("ver") != SNAP_VER:
         prev = {}
@@ -51,22 +51,10 @@ def refresh(force_results=False, log=print):
         res = prev.get("res")
         if res is None:
             raise
-    # 保存済みCSV（文字列の日付）と新規取得分（日付型）が混ざると日付列が文字列扱いになるため統一
-    res = res.copy()
-    res["date"] = pd.to_datetime(res["date"].astype(str).str.slice(0, 10), format="%Y-%m-%d", errors="coerce")
-    res["hg"] = pd.to_numeric(res["hg"], errors="coerce")
-    res["ag"] = pd.to_numeric(res["ag"], errors="coerce")
-    bad = res[["date", "home", "away", "hg", "ag"]].isna().any(axis=1).sum()
-    if bad:
-        lg(f"不正な行を除外: {bad}件")
-    res = res.dropna(subset=["date", "home", "away", "hg", "ag"]).drop_duplicates(["date", "home", "away"])
-    res["comp"] = res["comp"].fillna("").astype(str)
-    res["home"], res["away"] = res["home"].astype(str), res["away"].astype(str)
-    res[["hg", "ag"]] = res[["hg", "ag"]].astype(int)
-    res = res.sort_values("date").reset_index(drop=True)
+    res = E.clean_res(res, log=lg)
     lg(f"結果データ合計: {len(res)}試合（{res['date'].min():%Y/%m/%d}〜{res['date'].max():%Y/%m/%d}）")
 
-    # 3) 投票率（mini は toto の同じ試合を流用）
+    # 3) 投票率
     votes = {}
     for kind, g in card.groupby("kind"):
         if kind.startswith("mini"):
@@ -86,34 +74,61 @@ def refresh(force_results=False, log=print):
             if len(g) and all(x is not None for x in vv):
                 votes[kind] = vv
 
-    # 4) 鮮度チェック
     last = res["date"].max()
     lag = (E.now_jst().date() - last.date()).days
     if lag > 21:
-        errors.append(f"試合結果が {last:%Y/%m/%d} で止まっています（{lag}日前）。予想は古いデータに基づいています。")
+        errors.append(f"試合結果が {last:%Y/%m/%d} で止まっています（{lag}日前）。")
 
-    # 5) 学習・分析（どこで失敗したか分かるよう段階ごとにログ）
+    # 4) 過去の予想を読み込み → 振り返り
+    state = R.load_state(DATA, password, lg)
+    try:
+        R.backfill_previous(state, card, res, lg)
+    except Exception:
+        lg("前回分の再現で失敗（振り返りなしで続行）:\n" + traceback.format_exc())
+    cur = {k: int(g["round"].iloc[0]) for k, g in card.groupby("kind")}
+    reviewed = set(state.get("learning", {}).get("reviewed", []))
+    reviews, new_reviews = {}, []
+    arch = state.get("archive", {})
+    for key in sorted(arch, key=lambda k: int(k.split("|")[0])):
+        e = arch[key]
+        if e["kind"] in cur and e["round"] >= cur[e["kind"]]:
+            continue
+        try:
+            rv = R.review_entry(e, res)
+        except Exception:
+            lg(f"第{e['round']}回 {e['kind']} の振り返りで失敗:\n" + traceback.format_exc())
+            continue
+        if e["kind"] != "totoGOAL3":
+            e["_review_rows"] = [{"home": r["home"], "away": r["away"], "date": r["date"], "actual": it["actual"],
+                                  "v": r.get("v"), "p_model": r.get("p_model") or r["p"]}
+                                 for r, it in zip(e["rows"], rv["rows"])]
+        reviews[e["kind"]] = rv            # 種別ごとに最新の回が残る＝直前1回
+        if rv["summary"]["complete"] and rv["summary"]["known"] and key not in reviewed:
+            new_reviews.append(rv)
+    lg(f"振り返り: {', '.join(f'{k} 第{v['summary']['round']}回' for k, v in reviews.items()) or 'なし'}"
+       f" / 新たに完了 {len(new_reviews)}件")
+
+    # 5) 学習（検討要素の追加・検証・採否）
     lg("学習開始")
-    try:
-        M = E.train(res)
-    except Exception:
-        lg("学習で失敗:\n" + traceback.format_exc())
-        raise
-    lg(f"学習完了 / アンサンブル重み ポアソン{M['w']:.0%}")
-    try:
-        analysis = E.analyze_card(card, res, M, votes)
-    except Exception:
-        lg("試合分析で失敗:\n" + traceback.format_exc())
-        raise
+    M = E.train(res)
+    L = LRN.update(state, M, new_reviews, log=lg)
+    lg(f"学習完了 / 採用中の検討要素: {[E.FEAT_INFO[a][0] for a in L['active']] or 'なし'}")
+
+    # 6) 予想
+    pred = E.Predictor(res, M["poisson"], M["elo"], M["w"], M["base"], M["stacker"], M["vote_b"])
+    analysis = E.analyze_card(card, pred, votes)
     try:
         leagues = E.team_leagues(res)
     except Exception as e:
-        lg(f"所属リーグの判定に失敗（順位表示なしで続行）: {e}")
+        lg(f"所属リーグの判定に失敗: {e}")
         leagues = {}
+    R.archive_current(state, card, analysis, lg)
+    R.save_state(state, DATA)
     lg("分析完了")
 
     snap = {"ver": SNAP_VER, "updated": E.now_jst(), "card": card, "res": res, "votes": votes, "model": M,
-            "analysis": analysis, "leagues": leagues, "logs": logs, "errors": errors}
+            "analysis": analysis, "leagues": leagues, "logs": logs, "errors": errors,
+            "reviews": reviews, "learning": L, "state": state}
     DATA.mkdir(exist_ok=True)
     tmp = SNAP.with_suffix(".tmp")
     with open(tmp, "wb") as f:
@@ -123,6 +138,7 @@ def refresh(force_results=False, log=print):
 
 
 if __name__ == "__main__":
+    import os
     import sys
-    s = refresh(force_results="--refresh" in sys.argv)
+    s = refresh(force_results="--refresh" in sys.argv, password=os.environ.get("SITE_PASSWORD"))
     print("更新完了:", s["updated"], "エラー:", s["errors"] or "なし")
