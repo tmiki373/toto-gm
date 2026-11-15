@@ -14,14 +14,14 @@
 <style>
 :root{
   --bg:#f3f5f9;--bg2:#e8ecf3;--card:#fff;--fg:#0f172a;--sub:#64748b;--line:#e2e8f0;
-  --acc:#2563eb;--acc2:#1d4ed8;--accbg:#dbeafe;
+  --acc:#2563eb;--accbg:#dbeafe;
   --c1:#e11d48;--c0:#94a3b8;--c2:#2563eb;--val:#ea580c;--ok:#16a34a;--ng:#dc2626;
   --g0:#94a3b8;--g1:#22c55e;--g2:#f59e0b;--g3:#ef4444;
   --r:16px;--shadow:0 1px 2px rgba(15,23,42,.06),0 4px 16px rgba(15,23,42,.05);
 }
 @media(prefers-color-scheme:dark){:root{
   --bg:#0b1120;--bg2:#141c2f;--card:#121a2b;--fg:#e5e9f2;--sub:#8b97ad;--line:#1f2a40;
-  --acc:#3b82f6;--acc2:#60a5fa;--accbg:#1e2b4a;--c0:#64748b;--shadow:none}}
+  --acc:#3b82f6;--accbg:#1e2b4a;--c0:#64748b;--shadow:none}}
 [hidden]{display:none!important}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;background:var(--bg);color:var(--fg)}
@@ -30,7 +30,6 @@ body{font:15px/1.5 -apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans J
 button{font:inherit;color:inherit;cursor:pointer}
 .num{font-variant-numeric:tabular-nums}
 
-/* ---------- top bar ---------- */
 .top{position:sticky;top:0;z-index:20;background:rgba(15,23,42,.92);backdrop-filter:blur(10px);color:#fff;
   padding:calc(10px + env(safe-area-inset-top)) 14px 10px;display:flex;align-items:center;gap:10px}
 .top .logo{width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,#3b82f6,#06b6d4);display:grid;place-items:center;font-size:17px}
@@ -45,61 +44,60 @@ main{max-width:760px;margin:0 auto;padding:10px 12px}
 .warn{display:flex;gap:8px;background:#fff7ed;color:#9a3412;border:1px solid #fed7aa;border-radius:12px;padding:9px 11px;font-size:.8rem;margin:8px 0}
 @media(prefers-color-scheme:dark){.warn{background:#2a1a0e;color:#fdba74;border-color:#7c2d12}}
 
-/* ---------- hero ---------- */
 .hero{background:linear-gradient(140deg,#1e3a8a,#2563eb 55%,#0891b2);color:#fff;border:0}
-.hero .ttl{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.hero.rv{background:linear-gradient(140deg,#312e81,#6d28d9 60%,#a21caf)}
+.hero .ttl{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap}
 .hero h2{margin:0;font-size:1.15rem}
 .dl{font-size:.75rem;background:rgba(255,255,255,.16);padding:3px 9px;border-radius:999px;white-space:nowrap}
-.dl.soon{background:#f97316}
-.dl.over{background:rgba(0,0,0,.3)}
+.dl.soon{background:#f97316}.dl.over{background:rgba(0,0,0,.3)}
 .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:12px 0}
 .stat{background:rgba(255,255,255,.12);border-radius:12px;padding:8px 10px}
 .stat b{display:block;font-size:1.05rem;line-height:1.25}
-.stat span{font-size:.68rem;opacity:.8}
+.stat span{font-size:.68rem;opacity:.85}
 .ticket{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.85rem;background:rgba(0,0,0,.22);border-radius:10px;padding:9px 10px;word-break:break-all;line-height:1.7}
 .ticket i{font-style:normal;opacity:.6}
+.htext{font-size:.8rem;line-height:1.6;background:rgba(0,0,0,.18);border-radius:10px;padding:9px 10px}
 .row{display:flex;gap:8px;align-items:center}
 .hbtn{flex:1;border:0;border-radius:10px;padding:9px;background:rgba(255,255,255,.95);color:#1e3a8a;font-weight:700;font-size:.85rem}
 .hbtn.ghost{background:rgba(255,255,255,.14);color:#fff}
 
-/* ---------- controls ---------- */
 .ctl{display:grid;gap:10px}
 .ctl label{font-size:.72rem;color:var(--sub);display:block;margin-bottom:4px}
 .seg{display:flex;background:var(--bg2);border-radius:11px;padding:3px;gap:3px}
 .seg button{flex:1;border:0;background:transparent;padding:7px 4px;border-radius:9px;font-size:.8rem;color:var(--sub);white-space:nowrap}
 .seg button.on{background:var(--card);color:var(--fg);font-weight:700;box-shadow:0 1px 3px rgba(0,0,0,.12)}
 
-/* ---------- kind tabs ---------- */
 .ktabs{position:sticky;top:calc(56px + env(safe-area-inset-top));z-index:15;background:var(--bg);padding:8px 0 4px;display:flex;gap:6px;overflow-x:auto;scrollbar-width:none}
 .ktabs::-webkit-scrollbar{display:none}
 .ktabs button{flex:0 0 auto;border:1px solid var(--line);background:var(--card);border-radius:999px;padding:6px 14px;font-size:.82rem}
 .ktabs button.on{background:var(--fg);color:var(--bg);border-color:var(--fg);font-weight:700}
 
-/* ---------- match card ---------- */
 .m{padding:12px 14px}
+.m.hit{border-left:4px solid var(--ok)}.m.miss{border-left:4px solid var(--ng)}.m.wait{border-left:4px solid var(--line)}
 .mh{display:flex;align-items:center;gap:6px;font-size:.72rem;color:var(--sub)}
 .no{min-width:24px;height:22px;border-radius:7px;background:var(--bg2);color:var(--fg);font-weight:800;display:grid;place-items:center;font-size:.78rem;padding:0 5px}
 .badge{font-size:.66rem;font-weight:700;border-radius:6px;padding:2px 6px}
 .b-solid{background:#dcfce7;color:#166534}.b-close{background:#fef3c7;color:#92400e}.b-val{background:#ffedd5;color:#c2410c}
-@media(prefers-color-scheme:dark){.b-solid{background:#14321f;color:#86efac}.b-close{background:#3a2c0b;color:#fcd34d}.b-val{background:#3b1d0b;color:#fdba74}}
+.b-ok{background:#dcfce7;color:#166534}.b-ng{background:#fee2e2;color:#991b1b}.b-gray{background:var(--bg2);color:var(--sub)}
+@media(prefers-color-scheme:dark){.b-solid,.b-ok{background:#14321f;color:#86efac}.b-close{background:#3a2c0b;color:#fcd34d}.b-val{background:#3b1d0b;color:#fdba74}.b-ng{background:#3b1414;color:#fca5a5}}
 .vs{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:8px;margin:8px 0 10px}
 .tm{font-weight:700;font-size:.88rem;line-height:1.25;overflow-wrap:anywhere}
 .tm small{display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-top:3px;font-weight:500;font-size:.68rem;color:var(--sub)}
 .tm.r{text-align:right}.tm.r small{justify-content:flex-end}
 .picks{display:flex;gap:4px;justify-content:center}
 .pk{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;font-weight:800;color:#fff;font-size:.95rem}
-.pk.o{background:transparent;border:1.5px dashed var(--line);color:var(--sub)}
+.score{font-size:1.35rem;font-weight:800;text-align:center;line-height:1.1}
+.score small{display:block;font-size:.62rem;color:var(--sub);font-weight:600}
 .bar{display:flex;height:24px;border-radius:8px;overflow:hidden;font-size:.72rem;font-weight:700;color:#fff}
 .bar div{display:flex;align-items:center;justify-content:center;white-space:nowrap;transition:width .3s}
+.bar div.act{box-shadow:inset 0 0 0 3px #facc15}
 .vbar{display:flex;height:6px;border-radius:4px;overflow:hidden;margin-top:4px;opacity:.45}
 .legend3{display:flex;justify-content:space-between;font-size:.68rem;color:var(--sub);margin-top:5px}
 .legend3 .val{color:var(--val);font-weight:700}
 .more{margin-top:10px;border-top:1px dashed var(--line);padding-top:10px;display:none;font-size:.78rem}
 .m.open .more{display:block}
 .kv{display:grid;grid-template-columns:auto 1fr 1fr;gap:5px 10px;align-items:center}
-.kv dt{color:var(--sub);font-size:.72rem}
-.kv dd{margin:0}
-.kv dd.r{text-align:right}
+.kv dt{color:var(--sub);font-size:.72rem}.kv dd{margin:0}.kv dd.r{text-align:right}
 .form{display:inline-flex;gap:2px}
 .form i{width:15px;height:15px;border-radius:4px;display:inline-grid;place-items:center;font-style:normal;font-size:.6rem;font-weight:800;color:#fff}
 .fW{background:var(--ok)}.fD{background:var(--c0)}.fL{background:var(--ng)}
@@ -108,9 +106,11 @@ main{max-width:760px;margin:0 auto;padding:10px 12px}
 .sc{display:flex;gap:6px;flex-wrap:wrap}
 .sc span{background:var(--bg2);border-radius:6px;padding:2px 7px;font-size:.72rem}
 .note{font-size:.72rem;color:var(--ng);margin-top:6px}
-.side{font-size:.72rem;color:var(--sub);margin:8px 0 4px;display:flex;justify-content:space-between;align-items:center}
+.side{font-size:.72rem;color:var(--sub);margin:8px 0 4px;display:flex;justify-content:space-between;align-items:center;gap:6px}
+.cmt{margin-top:10px;background:var(--bg2);border-radius:10px;padding:9px 11px;font-size:.78rem;line-height:1.6}
+.cmt b{display:block;font-size:.72rem;color:var(--ng);margin-bottom:2px}
+.cmt ul{margin:0;padding-left:1.1em}
 
-/* ---------- mark sheet ---------- */
 .sheet{width:100%;border-collapse:separate;border-spacing:0 4px;font-size:.8rem}
 .sheet td{padding:4px 3px}
 .sheet .t{max-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -118,7 +118,6 @@ main{max-width:760px;margin:0 auto;padding:10px 12px}
 .cell.sel{color:#fff;border-color:transparent}
 .cell small{position:absolute;bottom:-1px;font-size:.52rem;font-weight:600;opacity:.85}
 
-/* ---------- analysis ---------- */
 h3{font-size:.95rem;margin:0 0 4px}
 .desc{font-size:.74rem;color:var(--sub);margin:0 0 10px}
 table.t{width:100%;border-collapse:collapse;font-size:.8rem}
@@ -143,19 +142,27 @@ input.search{width:100%;padding:9px 12px;border:1px solid var(--line);border-rad
 .status div{background:var(--bg2);border-radius:12px;padding:9px 11px}
 .status b{display:block;font-size:1rem}
 .status span{font-size:.68rem;color:var(--sub)}
+.feat{display:grid;grid-template-columns:1fr auto;gap:2px 8px;padding:9px 0;border-bottom:1px solid var(--line)}
+.feat:last-child{border:0}
+.feat b{font-size:.85rem}.feat p{grid-column:1/-1;margin:0;font-size:.72rem;color:var(--sub)}
+.hist{list-style:none;margin:0;padding:0}
+.hist li{display:grid;grid-template-columns:auto 1fr;gap:8px;padding:7px 0;border-bottom:1px solid var(--line);font-size:.78rem}
+.hist li:last-child{border:0}
+.hist small{grid-column:2;color:var(--sub);font-size:.66rem}
+.track{display:flex;align-items:flex-end;gap:4px;height:80px}
+.track div{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;font-size:.58rem;color:var(--sub);height:100%}
+.track i{display:block;width:100%;border-radius:4px 4px 0 0;background:var(--acc)}
 pre.log{white-space:pre-wrap;font-size:.7rem;color:var(--sub);max-height:260px;overflow:auto}
 
-/* ---------- bottom nav ---------- */
 .nav{position:fixed;left:0;right:0;bottom:0;z-index:30;background:var(--card);border-top:1px solid var(--line);
-  display:flex;padding:6px 6px calc(6px + env(safe-area-inset-bottom))}
-.nav button{flex:1;border:0;background:none;display:flex;flex-direction:column;align-items:center;gap:1px;font-size:.66rem;color:var(--sub);padding:4px 0}
+  display:flex;padding:6px 4px calc(6px + env(safe-area-inset-bottom))}
+.nav button{flex:1;border:0;background:none;display:flex;flex-direction:column;align-items:center;gap:1px;font-size:.62rem;color:var(--sub);padding:4px 0}
 .nav button svg{width:22px;height:22px}
 .nav button.on{color:var(--acc);font-weight:700}
 
-/* ---------- sheet (settings) ---------- */
 .mask{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:40;display:none}
 .drawer{position:fixed;left:0;right:0;bottom:0;z-index:41;background:var(--card);border-radius:20px 20px 0 0;
-  padding:8px 18px calc(20px + env(safe-area-inset-bottom));transform:translateY(105%);transition:transform .25s,visibility .25s;visibility:hidden;max-width:760px;margin:auto}
+  padding:8px 18px calc(20px + env(safe-area-inset-bottom));transform:translateY(105%);visibility:hidden;transition:transform .25s,visibility .25s;max-width:760px;margin:auto}
 .drawer.show{transform:none;visibility:visible}.mask.show{display:block}
 .grab{width:40px;height:5px;border-radius:3px;background:var(--line);margin:4px auto 12px}
 .field{margin:14px 0}
@@ -169,7 +176,6 @@ input[type=range]{width:100%;accent-color:var(--acc)}
   padding:8px 16px;border-radius:999px;font-size:.82rem;z-index:50;opacity:0;transition:opacity .2s;pointer-events:none}
 .toast.show{opacity:1}
 
-/* ---------- login ---------- */
 #login{min-height:100vh;display:grid;place-items:center;padding:20px;background:linear-gradient(160deg,#0f172a,#1e3a8a)}
 #login .box{width:100%;max-width:340px;color:#fff;text-align:center}
 #login .logo{width:64px;height:64px;border-radius:18px;margin:0 auto 14px;background:linear-gradient(135deg,#3b82f6,#06b6d4);display:grid;place-items:center;font-size:34px}
@@ -177,8 +183,6 @@ input[type=range]{width:100%;accent-color:var(--acc)}
 #login label{font-size:.8rem;opacity:.85}
 #lerr{color:#fca5a5;font-size:.8rem;min-height:1.2em}
 .foot{font-size:.68rem;color:var(--sub);text-align:center;margin:18px 0 6px}
-.skel{height:120px;border-radius:var(--r);background:linear-gradient(90deg,var(--bg2),var(--card),var(--bg2));background-size:200% 100%;animation:sk 1.2s infinite;margin:10px 0}
-@keyframes sk{to{background-position:-200% 0}}
 </style>
 </head>
 <body>
@@ -202,14 +206,15 @@ input[type=range]{width:100%;accent-color:var(--acc)}
     <a class="ibtn" id="refresh" target="_blank" title="今すぐ更新" aria-label="今すぐ更新">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg></a>
     <button class="ibtn" id="openSet" aria-label="設定">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg></button>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg></button>
   </div>
   <main id="main"></main>
   <nav class="nav">
     <button data-v="pred" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7l3 2-1 4h-4l-1-4z"/></svg>予想</button>
-    <button data-v="sheet"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h2M14 8h2M8 12h2M14 12h2M8 16h2M14 16h2"/></svg>マークシート</button>
+    <button data-v="sheet"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h2M14 8h2M8 12h2M14 12h2M8 16h2M14 16h2"/></svg>マーク</button>
+    <button data-v="review"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 3"/></svg>振り返り</button>
     <button data-v="teams"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>チーム</button>
-    <button data-v="model"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg>精度・データ</button>
+    <button data-v="model"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg>精度・学習</button>
   </nav>
 </div>
 
@@ -232,12 +237,11 @@ const $ = s => document.querySelector(s);
 const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 let D = null;
-const S = Object.assign({view:"pred", kind:0, budget:1000, alpha:0, detail:false, expand:false, lg:"all", q:""},
+const S = Object.assign({view:"pred", kind:0, rkind:0, budget:1000, alpha:0, detail:false, expand:false, lg:"all", q:"", missOnly:false},
   JSON.parse(localStorage.getItem("toto_state") || "{}"));
 const save = () => localStorage.setItem("toto_state", JSON.stringify(S));
 const open = new Set();
 
-// ================= 復号・ログイン =================
 async function decrypt(enc, pw) {
   const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(pw), "PBKDF2", false, ["deriveKey"]);
   const key = await crypto.subtle.deriveKey({name:"PBKDF2", salt:b64(enc.salt), iterations:enc.iter, hash:"SHA-256"},
@@ -259,7 +263,6 @@ $("#pw").onkeydown = e => { if (e.key === "Enter") $("#go").click(); };
 const saved = localStorage.getItem("toto_pw");
 if (saved) start(saved).catch(() => localStorage.removeItem("toto_pw"));
 
-// ================= 設定 =================
 const drawer = on => { $("#drawer").classList.toggle("show", on); $("#mask").classList.toggle("show", on); };
 $("#openSet").onclick = () => { $("#budget").value = S.budget; $("#alpha").value = S.alpha; $("#aval").textContent = (+S.alpha).toFixed(1);
   $("#detail").checked = S.detail; $("#expand").checked = S.expand; drawer(true); };
@@ -270,10 +273,9 @@ $("#detail").onchange = e => { S.detail = e.target.checked; save(); render(); };
 $("#expand").onchange = e => { S.expand = e.target.checked; save(); render(); };
 $("#logout").onclick = () => { localStorage.removeItem("toto_pw"); location.reload(); };
 document.querySelectorAll(".nav button").forEach(b => b.onclick = () => { S.view = b.dataset.v; save(); render(); scrollTo(0, 0); });
-
 function toast(t) { const el = $("#toast"); el.textContent = t; el.classList.add("show"); setTimeout(() => el.classList.remove("show"), 1400); }
 
-// ================= 買い目（予算内で的中確率 or 妙味を最大化） =================
+// ================= 買い目 =================
 const OUT3 = ["1","0","2"], OUT4 = ["0","1","2","3"];
 const sum = (a, idx) => idx.reduce((s, k) => s + a[k], 0);
 function slotsOf(K) {
@@ -304,7 +306,7 @@ function buildTicket(slots, units, alpha) {
   return {picks: picks.map(p => [...p].sort((a, b) => a - b)), units: picks.reduce((c, p) => c * p.length, 1), hit, share};
 }
 
-// ================= 表示ヘルパー =================
+// ================= ヘルパー =================
 const C3 = ["var(--c1)","var(--c0)","var(--c2)"], C4 = ["var(--g0)","var(--g1)","var(--g2)","var(--g3)"];
 const pct = (x, d = 0) => (x * 100).toFixed(d) + "%";
 const oneIn = x => { if (!x) return "-"; const n = 1 / x;
@@ -318,39 +320,39 @@ function left(iso) { if (!iso) return null; const ms = new Date(iso) - Date.now(
   const h = ms / 36e5, d = Math.floor(h / 24);
   const P = Object.fromEntries(new Intl.DateTimeFormat("ja-JP", {timeZone:"Asia/Tokyo", month:"numeric", day:"numeric",
     weekday:"short", hour:"2-digit", minute:"2-digit", hour12:false}).formatToParts(new Date(iso)).map(x => [x.type, x.value]));
-  const at = `${P.month}/${P.day}(${P.weekday}) ${P.hour}:${P.minute}`;
-  return {t:`締切 ${at}・あと${d ? d + "日" : ""}${Math.floor(h % 24)}時間${d ? "" : Math.floor(ms / 6e4 % 60) + "分"}`, cls: h < 6 ? "soon" : ""}; }
-function bar(p, labels, colors) {
-  return `<div class="bar">` + p.map((x, i) => `<div style="width:${Math.max(x * 100, .6)}%;background:${colors[i]}">${x >= .13 ? labels[i] + " " + pct(x) : ""}</div>`).join("") + "</div>"; }
+  return {t:`締切 ${P.month}/${P.day}(${P.weekday}) ${P.hour}:${P.minute}・あと${d ? d + "日" : ""}${Math.floor(h % 24)}時間${d ? "" : Math.floor(ms / 6e4 % 60) + "分"}`, cls: h < 6 ? "soon" : ""}; }
+function bar(p, labels, colors, act) {
+  return `<div class="bar">` + p.map((x, i) => `<div class="${i === act ? "act" : ""}" style="width:${Math.max(x * 100, .6)}%;background:${colors[i]}">${x >= .13 ? labels[i] + " " + pct(x) : ""}</div>`).join("") + "</div>"; }
 const vbar = (v, colors) => v ? `<div class="vbar">` + v.map((x, i) => `<div style="width:${x * 100}%;background:${colors[i]}"></div>`).join("") + "</div>" : "";
 const formHtml = f => `<span class="form">${[...(f.marks || "")].map(c => `<i class="f${c}">${{W:"○",D:"△",L:"●"}[c]}</i>`).join("") || "-"}</span>`;
 const tinfo = t => t && t.lg ? `${t.lg} ${t.rank}位` : "";
 const pickColor = lab => ({"1":"var(--c1)","0":"#64748b","2":"var(--c2)"})[lab] || "var(--acc)";
+const md = s => s ? s.slice(5).replace("-", "/") : "";
 
-// ================= 描画 =================
 function header() {
   const fresh = D.lag <= 10 ? "var(--ok)" : D.lag <= 21 ? "var(--g2)" : "var(--ng)";
   $("#upd").innerHTML = `<span class="fresh" style="background:${fresh}"></span>更新 ${ago(D.updated)}・結果 ${D.res_to.slice(5)}まで`;
 }
+
 function render() {
   if (!D) return;
   header();
   document.querySelectorAll(".nav button").forEach(b => b.classList.toggle("on", b.dataset.v === S.view));
-  const warns = D.errors.map(e => `<div class="warn">⚠️<span>${esc(e)}</span></div>`).join("");
-  let h = warns;
+  let h = D.errors.map(e => `<div class="warn">⚠️<span>${esc(e)}</span></div>`).join("");
   if (S.view === "pred" || S.view === "sheet") {
     S.kind = Math.min(S.kind, D.kinds.length - 1);
     h += `<div class="ktabs">` + D.kinds.map((k, i) => `<button class="${i === S.kind ? "on" : ""}" data-k="${i}">${k.kind.replace("mini toto-", "mini ")}</button>`).join("") + `</div>`;
     const K = D.kinds[S.kind], slots = slotsOf(K), T = buildTicket(slots, Math.floor(S.budget / 100), S.alpha);
-    h += hero(K, slots, T);
-    h += S.view === "pred" ? predView(K, slots, T) : sheetView(K, slots, T);
-  } else if (S.view === "teams") h += teamsView();
+    h += hero(K, slots, T) + (S.view === "pred" ? predView(K, slots, T) : sheetView(K, slots, T));
+  } else if (S.view === "review") h += reviewView();
+  else if (S.view === "teams") h += teamsView();
   else h += modelView();
   h += `<p class="foot">確率は過去データからの推定で、的中を保証するものではありません。<br>19歳未満の方は購入できません。</p>`;
   $("#main").innerHTML = h;
   bind();
 }
 
+// ================= 予想 =================
 function hero(K, slots, T) {
   const dl = left(K.deadline);
   const ticket = slots.map((s, i) => `<i>${s.key}:</i>${T.picks[i].map(k => s.lab[k] === "3" ? "3+" : s.lab[k]).join("")}`).join("  ");
@@ -375,18 +377,17 @@ function hero(K, slots, T) {
       `<button data-a="${a}" class="${Math.abs(S.alpha - a) < .05 ? "on" : ""}">${t}</button>`).join("")}</div></div>
   </div>`;
 }
-
-function badges(r, p, v) {
+function badges(p, v) {
   const mx = Math.max(...p); let b = "";
   if (mx >= .6) b += `<span class="badge b-solid">堅い</span>`; else if (mx < .45) b += `<span class="badge b-close">混戦</span>`;
   if (v && p.some((x, k) => x / Math.max(v[k], 1e-3) >= 1.25 && x >= .2)) b += `<span class="badge b-val">妙味</span>`;
   return b;
 }
-
 function details(r) {
   let h = `<dl class="kv">
     <dt></dt><dd><b>${esc(r.home)}</b></dd><dd class="r"><b>${esc(r.away)}</b></dd>
     <dt>直近5</dt><dd>${formHtml(r.form_h)}</dd><dd class="r">${formHtml(r.form_a)}</dd>
+    <dt>勝点(直近5)</dt><dd class="num">${r.form_h.pts}</dd><dd class="r num">${r.form_a.pts}</dd>
     <dt>得失点</dt><dd class="num">${r.form_h.gf}-${r.form_h.ga}</dd><dd class="r num">${r.form_a.gf}-${r.form_a.ga}</dd>
     <dt>中○日</dt><dd class="num">${r.rest_h ?? "-"}日</dd><dd class="r num">${r.rest_a ?? "-"}日</dd>
     <dt>Elo</dt><dd class="num">${r.elo_h ?? "-"}</dd><dd class="r num">${r.elo_a ?? "-"}</dd>
@@ -394,10 +395,11 @@ function details(r) {
   </dl>
   <div class="side"><span>対戦成績（${esc(r.home)}視点）</span><b>${r.h2h}</b></div>`;
   if (r.scores && r.scores.length) h += `<div class="side"><span>出やすいスコア</span></div><div class="sc">${r.scores.map(([a, b, p]) => `<span>${a}-${b}　${pct(p)}</span>`).join("")}</div>`;
+  if (r.p_base && r.p && r.p_base.some((x, i) => Math.abs(x - r.p[i]) >= .005))
+    h += `<div class="side"><span>学習補正</span><span class="num">補正前 ${r.p_base.map(x => pct(x)).join("/")} → 補正後 ${r.p.map(x => pct(x)).join("/")}</span></div>`;
   if (S.detail && r.p_poi && r.p_elo) h += `<div class="side"><span>モデル別</span><span class="num">ポアソン ${r.p_poi.map(x => pct(x)).join("/")}　Elo ${r.p_elo.map(x => pct(x)).join("/")}</span></div>`;
   return h;
 }
-
 function predView(K, slots, T) {
   let h = "";
   if (K.kind === "totoGOAL3") {
@@ -419,7 +421,7 @@ function predView(K, slots, T) {
       const legend = OUT3.map((o, k) => { const t = `${o}: ${pct(r.p[k])}${r.v ? ` <span style="opacity:.7">(票${pct(r.v[k])})</span>` : ""}`;
         return r.v && r.p[k] / Math.max(r.v[k], 1e-3) >= 1.25 && r.p[k] >= .2 ? `<span class="val">${t}</span>` : `<span>${t}</span>`; }).join("");
       h += `<div class="card m ${op ? "open" : ""}" data-id="${id}">
-        <div class="mh"><span class="no">${r.no}</span>${r.date}(${r.dow}) ${r.time}${badges(r, r.p, r.v)}<span class="chev">▼</span></div>
+        <div class="mh"><span class="no">${r.no}</span>${r.date}(${r.dow}) ${r.time}${badges(r.p, r.v)}<span class="chev">▼</span></div>
         <div class="vs">
           <div class="tm">${esc(r.home)}<small>${tinfo(r.ti_h)} ${formHtml(r.form_h)}</small></div>
           <div class="picks">${OUT3.map((o, k) => sel.includes(k) ? `<span class="pk" style="background:${pickColor(o)}">${o}</span>` : "").join("")}</div>
@@ -435,12 +437,11 @@ function predView(K, slots, T) {
   }
   return h;
 }
-
 function sheetView(K, slots, T) {
   const isG = K.kind === "totoGOAL3", labs = isG ? ["0","1","2","3+"] : OUT3;
   let h = `<div class="card"><table class="sheet"><tr style="font-size:.68rem;color:var(--sub)"><td>No</td><td>対戦</td>${labs.map(l => `<td style="text-align:center">${l}</td>`).join("")}</tr>`;
   slots.forEach((s, i) => {
-    const name = isG ? `${s.key.endsWith("H") ? s.r.home : s.r.away}<span style="color:var(--sub);font-size:.68rem"> ${s.key.endsWith("H") ? "H" : "A"}</span>`
+    const name = isG ? `${esc(s.key.endsWith("H") ? s.r.home : s.r.away)}<span style="color:var(--sub);font-size:.68rem"> ${s.key.endsWith("H") ? "H" : "A"}</span>`
                      : `${esc(s.r.home)}<span style="color:var(--sub)"> - </span>${esc(s.r.away)}`;
     h += `<tr><td style="font-weight:800;width:30px">${isG ? s.key : s.r.no}</td><td class="t">${name}</td>` +
       s.p.map((p, k) => { const on = T.picks[i].includes(k), col = isG ? C4[k] : C3[k];
@@ -449,6 +450,63 @@ function sheetView(K, slots, T) {
   return h + `</table><p class="desc" style="margin-top:8px">塗りつぶし＝買う選択肢。薄い色ほど可能性が低い（数字はモデル確率）。</p></div>`;
 }
 
+// ================= 振り返り =================
+function reviewView() {
+  const R = D.reviews || [];
+  if (!R.length) return `<div class="card"><h3>振り返り</h3><p class="desc">まだ振り返れる回がありません。予想した回の試合が終わると、ここに予想と結果の比較が表示されます。</p></div>`;
+  S.rkind = Math.min(S.rkind, R.length - 1);
+  let h = `<div class="ktabs">` + R.map((k, i) => `<button class="${i === S.rkind ? "on" : ""}" data-rk="${i}">${k.kind.replace("mini toto-", "mini ")}</button>`).join("") + `</div>`;
+  const V = R[S.rkind], s = V.summary, isG = V.kind === "totoGOAL3";
+  const tcls = s.ticket === "的中" ? "b-ok" : s.ticket.startsWith("外れ") ? "b-ng" : "b-gray";
+  h += `<div class="card hero rv">
+    <div class="ttl"><h2>第${s.round}回 ${V.kind} の結果</h2>${s.reconstructed ? `<span class="dl">当時のデータで再現した予想</span>` : `<span class="dl">締切時点の予想</span>`}</div>
+    <div class="stats num">
+      <div class="stat"><b>${s.hits}/${s.known}</b><span>${isG ? "買い目に入った枠" : "本命的中"}</span></div>
+      <div class="stat"><b>${s.ticket}</b><span>1,000円の買い目(${s.ticket_units}口)</span></div>
+      <div class="stat"><b>${s.ll != null && s.ll_base != null ? (s.ll < s.ll_base ? "平均より良" : "平均より悪") : "-"}</b><span>確率の当てはまり</span></div>
+    </div>
+    <div class="htext">${esc(s.summary)}</div>
+    <div class="row" style="margin-top:10px"><button class="hbtn ghost" id="missOnly">${S.missOnly ? "すべて表示" : "外れだけ表示"}</button></div>
+  </div>`;
+  const rows = V.rows.filter(r => !S.missOnly || r.hit === false);
+  rows.forEach(r => {
+    const st = r.actual == null ? "wait" : r.hit ? "hit" : "miss";
+    const badge = r.actual == null ? `<span class="badge b-gray">結果待ち</span>` : r.hit ? `<span class="badge b-ok">的中</span>` : `<span class="badge b-ng">外れ</span>`;
+    if (isG) {
+      h += `<div class="card m ${st}"><div class="mh"><span class="no">${r.no}</span>${md(r.date)} ${esc(r.match)}${badge}</div>
+        <div class="side" style="margin-top:8px"><span><b style="color:var(--fg);font-size:.88rem">${esc(r.team)}</b> の得点</span>
+        <span>予想 ${r.picks.map(k => `<span class="pk" style="display:inline-grid;background:${C4[k]};width:24px;height:22px;font-size:.75rem">${k === 3 ? "3+" : k}</span>`).join(" ")}
+        → 結果 <b style="font-size:1rem;color:var(--fg)">${r.goals ?? "-"}点</b></span></div>
+        ${bar(r.p, ["0","1","2","3+"], C4, r.actual)}
+        ${r.comments ? `<div class="cmt"><b>分析</b><ul>${r.comments.map(c => `<li>${esc(c)}</li>`).join("")}</ul></div>` : ""}</div>`;
+    } else {
+      const sc = r.score ? r.score.split("-") : null;
+      h += `<div class="card m ${st}"><div class="mh"><span class="no">${r.no}</span>${md(r.date)}${badge}${r.in_ticket === false && r.hit === false ? "" : r.in_ticket && !r.hit ? `<span class="badge b-solid">買い目では的中</span>` : ""}</div>
+        <div class="vs">
+          <div class="tm">${esc(r.home)}<small>予想 <span class="pk" style="display:inline-grid;width:22px;height:22px;font-size:.75rem;background:${pickColor(OUT3[r.pick])}">${OUT3[r.pick]}</span></small></div>
+          <div class="score num">${sc ? `${sc[0]} - ${sc[1]}` : "- -"}<small>${r.actual != null ? "結果 " + OUT3[r.actual] : ""}</small></div>
+          <div class="tm r">${esc(r.away)}<small>${r.actual != null ? `結果の予想確率 ${pct(r.p_act)}` : ""}</small></div>
+        </div>
+        ${bar(r.p, ["ホーム","分","アウェイ"], C3, r.actual)}${vbar(r.v, C3)}
+        ${r.comments ? `<div class="cmt"><b>なぜ外れたか</b><ul>${r.comments.map(c => `<li>${esc(c)}</li>`).join("")}</ul></div>` : ""}</div>`;
+    }
+  });
+  if (!rows.length) h += `<div class="card"><p class="desc" style="margin:0">外れた試合はありません。</p></div>`;
+  h += `<p class="foot" style="text-align:left">帯の黄色い枠＝実際の結果。帯はその回の予想確率（締切時点で確定したもの）。</p>`;
+  h += learnCard(true);
+  return h;
+}
+
+function learnCard(compact) {
+  const L = D.learning; if (!L) return "";
+  const hist = compact ? L.history.slice(0, 6) : L.history;
+  const ic = {"採用":"b-ok","除外":"b-ng","見送り":"b-gray","候補追加":"b-close","調整":"b-val","開始":"b-gray"};
+  return `<div class="card"><h3>${compact ? "この振り返りで学んだこと" : "学習の記録"}</h3>
+    <p class="desc">外れ方の傾向から「検討要素」を追加し、過去データで効果を検証して、改善したものだけを予想に取り入れます。</p>
+    <ul class="hist">${hist.map(x => `<li><span class="badge ${ic[x.event] || "b-gray"}" style="height:fit-content;white-space:nowrap">${x.event}</span><span>${esc(x.detail)}<small>${x.at}${x.round ? `・第${x.round}回の振り返り後` : ""}</small></span></li>`).join("") || "<li>まだ記録はありません</li>"}</ul></div>`;
+}
+
+// ================= チーム =================
 function teamsView() {
   const lgs = ["all", ...new Set(D.ratings.map(r => r.lg).filter(x => x !== "-"))].sort();
   const q = S.q.trim();
@@ -461,16 +519,36 @@ function teamsView() {
   rows.forEach(r => {
     h += `<tr><td style="color:var(--sub)">${S.lg === "all" ? r.lg + "-" : ""}${r.rank}</td><td style="text-align:left;font-weight:700">${esc(r.team)}</td><td>${r.elo}</td>
       <td><div style="display:flex;align-items:center;gap:5px;justify-content:flex-end">${r.att.toFixed(2)}<div class="mini" style="width:40px"><i style="width:${r.att / mx * 100}%;background:var(--c1)"></i></div></div></td>
-      <td><div style="display:flex;align-items:center;gap:5px;justify-content:flex-end">${r.def.toFixed(2)}<div class="mini" style="width:40px"><i style="width:${(1 - r.def / mxd) * 100 + 15}%;background:var(--ok)"></i></div></div></td></tr>`;
+      <td><div style="display:flex;align-items:center;gap:5px;justify-content:flex-end">${r.def.toFixed(2)}<div class="mini" style="width:40px"><i style="width:${Math.min(100, (1 - r.def / mxd) * 100 + 15)}%;background:var(--ok)"></i></div></div></td></tr>`;
   });
   return h + `</table>${rows.length ? "" : `<p class="desc">該当なし</p>`}</div>`;
 }
 
+// ================= 精度・学習 =================
 function modelView() {
+  const L = D.learning;
   const best = D.backtest.reduce((a, b) => b.ll < a.ll ? b : a);
   const fresh = D.lag <= 10 ? ["OK", "var(--ok)"] : D.lag <= 21 ? ["やや古い", "var(--g2)"] : ["古い", "var(--ng)"];
   const mm = Math.max(...D.monthly.map(m => m[1]));
-  let h = `<div class="card"><h3>データの状態</h3><p class="desc">結果データが新しいほど、予想が今のチーム状態を反映します。</p>
+  const stCls = {"採用中":"b-ok","検証済み・見送り":"b-gray","検証待ち":"b-close","未着手":"b-gray"};
+  const tr = (L.track || []).filter(t => t.kind === "toto" && t.known);
+  let h = `<div class="card"><h3>予想に使っている検討要素</h3>
+    <p class="desc">振り返りのたびに候補を追加・検証します。数値は採用による改善幅（対数損失の減少、＋が改善）。</p>
+    ${L.features.map(f => `<div class="feat"><b>${f.name}</b><span class="badge ${stCls[f.status]}">${f.status}</span>
+      <p>${f.desc}${f.gain != null ? `　<span class="num">効果 ${f.gain >= 0 ? "+" : ""}${f.gain.toFixed(4)}</span>` : ""}${f.since ? `・第${f.since}回の振り返り後に採用` : ""}${f.key === "vote" ? `・振り返り済み ${L.vote.n}/${L.vote.need}試合${L.vote.b ? `・比率${L.vote.b}` : ""}` : ""}</p></div>`).join("")}
+  </div>`;
+  if (tr.length) {
+    h += `<div class="card"><h3>回ごとの成績（toto）</h3><p class="desc">本命の的中率の推移。学習の効果をここで確認できます。</p>
+      <div class="track">${tr.map(t => `<div><span class="num">${t.hits}/${t.known}</span><i style="height:${t.hits / t.known * 70}%;background:${t.ll != null && t.ll_base != null && t.ll < t.ll_base ? "var(--ok)" : "var(--acc)"}"></i><span>${t.round}${t.reconstructed ? "*" : ""}</span></div>`).join("")}</div>
+      <p class="desc" style="margin-top:6px">緑＝確率の当てはまりが平均より良かった回。*＝当時のデータで再現した予想。</p></div>`;
+  }
+  h += learnCard(false);
+  h += `<div class="card"><h3>予想の答え合わせ（過去データ）</h3><p class="desc">${D.test}を、それ以前のデータだけで予想した成績。対数損失・Brierは小さいほど良い。</p>
+    <table class="t num"><tr><th>モデル</th><th>対数損失</th><th>Brier</th><th>本命的中</th></tr>
+    ${D.backtest.map(b => `<tr class="${b === best ? "best" : ""}"><td>${b.name}</td><td>${b.ll.toFixed(3)}</td><td>${b.brier.toFixed(3)}</td><td>${pct(b.acc, 1)}</td></tr>`).join("")}</table></div>
+  <div class="card"><h3>確率の当てはまり</h3><p class="desc">青い帯＝表示した確率、オレンジの線＝実際に当たった割合。近いほど確率が信用できます。</p>
+    <div class="cal num">${D.calib.map(c => `<span>${c.band}</span><div class="calbar"><i style="width:${c.pred * 100}%"></i><b style="left:calc(${c.act * 100}% - 1px)"></b></div><span style="text-align:right">${c.n}試合</span>`).join("")}</div></div>
+  <div class="card"><h3>データの状態</h3>
     <div class="status num">
       <div><span>最新の試合結果</span><b style="color:${fresh[1]}">${D.res_to}</b><span>${D.lag}日前・${fresh[0]}</span></div>
       <div><span>学習データ</span><b>${D.n_res.toLocaleString()}試合</b><span>${D.res_from}〜</span></div>
@@ -480,23 +558,20 @@ function modelView() {
     <div class="spark">${D.monthly.map(m => `<div title="${m[0]}: ${m[1]}試合" style="height:${m[1] / mm * 100}%"></div>`).join("")}</div>
     <div class="sparkx"><span>${D.monthly[0]?.[0] ?? ""}</span><span>月別の試合数</span><span>${D.monthly.at(-1)?.[0] ?? ""}</span></div>
   </div>
-  <div class="card"><h3>予想の答え合わせ</h3><p class="desc">${D.test}を、それ以前のデータだけで予想した成績。対数損失・Brierは小さいほど良い。</p>
-    <table class="t num"><tr><th>モデル</th><th>対数損失</th><th>Brier</th><th>本命的中</th></tr>
-    ${D.backtest.map(b => `<tr class="${b === best ? "best" : ""}"><td>${b.name}</td><td>${b.ll.toFixed(3)}</td><td>${b.brier.toFixed(3)}</td><td>${pct(b.acc, 1)}</td></tr>`).join("")}</table></div>
-  <div class="card"><h3>確率の当てはまり</h3><p class="desc">青い帯＝表示した確率、オレンジの線＝実際に当たった割合。近いほど確率が信用できます。</p>
-    <div class="cal num">${D.calib.map(c => `<span>${c.band}</span><div class="calbar"><i style="width:${c.pred * 100}%"></i><b style="left:calc(${c.act * 100}% - 1px)"></b></div><span style="text-align:right">${c.n}試合</span>`).join("")}</div></div>
   <div class="card"><details><summary style="font-size:.85rem">更新ログ</summary><pre class="log">${esc(D.logs.join("\n"))}</pre></details></div>`;
   return h;
 }
 
 function bind() {
-  document.querySelectorAll(".ktabs button").forEach(b => b.onclick = () => { S.kind = +b.dataset.k; save(); render(); });
+  document.querySelectorAll(".ktabs button[data-k]").forEach(b => b.onclick = () => { S.kind = +b.dataset.k; save(); render(); });
+  document.querySelectorAll(".ktabs button[data-rk]").forEach(b => b.onclick = () => { S.rkind = +b.dataset.rk; save(); render(); });
   document.querySelectorAll("#bseg button").forEach(b => b.onclick = () => { S.budget = +b.dataset.b; save(); render(); });
   document.querySelectorAll("#aseg button").forEach(b => b.onclick = () => { S.alpha = +b.dataset.a; save(); render(); });
-  document.querySelectorAll(".m").forEach(c => c.onclick = () => { const id = c.dataset.id;
+  document.querySelectorAll(".m[data-id]").forEach(c => c.onclick = () => { const id = c.dataset.id;
     open.has(id) ? open.delete(id) : open.add(id); c.classList.toggle("open"); });
   document.querySelectorAll("#lgchips button").forEach(b => b.onclick = () => { S.lg = b.dataset.lg; save(); render(); });
   const q = $("#q"); if (q) q.oninput = e => { S.q = e.target.value; const pos = e.target.selectionStart; render(); const n = $("#q"); n.focus(); n.setSelectionRange(pos, pos); };
+  const mo = $("#missOnly"); if (mo) mo.onclick = () => { S.missOnly = !S.missOnly; save(); render(); };
   const ts = $("#toSheet"); if (ts) ts.onclick = () => { S.view = S.view === "sheet" ? "pred" : "sheet"; save(); render(); };
   const cp = $("#copy"); if (cp) cp.onclick = async () => {
     const txt = $("#ticket").innerText.replace(/\s+/g, " ").trim();
