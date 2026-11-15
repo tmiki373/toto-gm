@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0b5ed7">
+<title>toto予想</title>
+<style>
+:root{--bg:#f5f6f8;--fg:#1d1f23;--card:#fff;--line:#e2e4e8;--sub:#6b7280;--blue:#0b5ed7}
+@media(prefers-color-scheme:dark){:root{--bg:#121417;--fg:#e8eaed;--card:#1d2025;--line:#2e3238;--sub:#9aa0a6}}
+*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;background:var(--bg);color:var(--fg);font-size:15px}
+header{position:sticky;top:0;z-index:5;background:var(--blue);color:#fff;padding:10px 14px calc(8px);display:flex;justify-content:space-between;align-items:center}
+header h1{font-size:1.15rem;margin:0}
+header small{opacity:.85;font-size:.72rem}
+main{max-width:760px;margin:0 auto;padding:8px 10px 60px}
+.tabs{display:flex;gap:6px;overflow-x:auto;padding:8px 0;position:sticky;top:46px;background:var(--bg);z-index:4}
+.tabs button{flex:0 0 auto;border:1px solid var(--line);background:var(--card);color:var(--fg);border-radius:18px;padding:6px 13px;font-size:.85rem}
+.tabs button.on{background:var(--blue);color:#fff;border-color:var(--blue)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin:8px 0}
+.hdr{display:flex;justify-content:space-between;font-size:.74rem;color:var(--sub)}
+.teams{font-weight:700;margin:3px 0 6px}
+.bar{display:flex;height:20px;border-radius:6px;overflow:hidden;font-size:.7rem;color:#fff;font-weight:700}
+.bar div{display:flex;align-items:center;justify-content:center;white-space:nowrap}
+.vbar{height:7px;margin-top:3px;opacity:.5}
+.pick{display:inline-block;min-width:24px;text-align:center;padding:1px 7px;border-radius:6px;background:var(--blue);color:#fff;font-weight:700;margin-left:3px}
+.meta{font-size:.74rem;color:var(--sub);margin-top:5px;line-height:1.55}
+.val{color:#e67e22;font-weight:700}
+.note{font-size:.72rem;color:#c0392b}
+.warn{background:#fff3cd;color:#664d03;border-radius:8px;padding:6px 10px;font-size:.8rem;margin:6px 0}
+.big{font-size:1.05rem;font-weight:700}
+.copy{font-family:ui-monospace,Menlo,monospace;font-size:.85rem;background:var(--bg);border-radius:8px;padding:8px;word-break:break-all;user-select:all}
+label{font-size:.82rem;display:block;margin-top:6px}
+input[type=range]{width:100%}
+input[type=number],input[type=password]{width:100%;padding:9px;font-size:1rem;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--fg)}
+button.main{width:100%;padding:11px;border:0;border-radius:8px;background:var(--blue);color:#fff;font-size:1rem;margin-top:10px}
+table{width:100%;border-collapse:collapse;font-size:.8rem}
+th,td{padding:5px 4px;border-bottom:1px solid var(--line);text-align:right}
+th:first-child,td:first-child{text-align:left}
+details summary{cursor:pointer;font-size:.85rem}
+.legend{font-size:.72rem;color:var(--sub)}
+#login{max-width:360px;margin:18vh auto;padding:0 16px}
+a{color:var(--blue)}
+</style>
+</head>
+<body>
+<div id="login">
+  <h2>⚽ toto予想</h2>
+  <input id="pw" type="password" placeholder="パスワード" autocomplete="current-password">
+  <label><input id="remember" type="checkbox" checked> この端末で記憶する</label>
+  <button class="main" id="go">開く</button>
+  <p id="lerr" class="note"></p>
+</div>
+<div id="app" hidden>
+<header><div><h1>⚽ toto予想</h1><small id="upd"></small></div><a id="refresh" style="color:#fff;font-size:.8rem" target="_blank">今すぐ更新 ↗</a></header>
+<main>
+  <div id="errs"></div>
+  <details class="card"><summary>買い方の設定</summary>
+    <label>予算（円／くじ種別）<input id="budget" type="number" min="100" step="100" value="1000"></label>
+    <label>的中率重視 ←→ 配当妙味重視 <b id="aval">0.0</b><input id="alpha" type="range" min="0" max="1" step="0.1" value="0"></label>
+    <label><input id="detail" type="checkbox"> モデル別の確率も表示</label>
+  </details>
+  <div class="tabs" id="tabs"></div>
+  <div id="view"></div>
+  <p class="legend">確率は過去データからの推定で、的中を保証するものではありません。</p>
+</main>
+</div>
+<script>
+const $ = s => document.querySelector(s);
+const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+let D = null, cur = 0;
+
+async function decrypt(enc, pw) {
+  const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(pw), "PBKDF2", false, ["deriveKey"]);
+  const key = await crypto.subtle.deriveKey({name:"PBKDF2", salt:b64(enc.salt), iterations:enc.iter, hash:"SHA-256"},
+    base, {name:"AES-GCM", length:256}, false, ["decrypt"]);
+  const pt = await crypto.subtle.decrypt({name:"AES-GCM", iv:b64(enc.iv)}, key, b64(enc.ct));
+  return JSON.parse(new TextDecoder().decode(pt));
+}
+
+async function open_(pw) {
+  const enc = await (await fetch("data.json?t=" + Date.now(), {cache:"no-store"})).json();
+  D = await decrypt(enc, pw);
+  if ($("#remember").checked) localStorage.setItem("toto_pw", pw);
+  $("#login").hidden = true; $("#app").hidden = false;
+  try { const c = await (await fetch("config.json", {cache:"no-store"})).json();
+        if (c.repo) $("#refresh").href = `https://github.com/${c.repo}/actions/workflows/update.yml`; } catch(e) {}
+  ["budget","alpha","detail"].forEach(id => { const v = localStorage.getItem("toto_"+id);
+    if (v !== null) { if (id === "detail") $("#"+id).checked = v === "1"; else $("#"+id).value = v; } });
+  render();
+}
+$("#go").onclick = () => open_($("#pw").value).catch(() => { $("#lerr").textContent = "パスワードが違うか、データを読み込めませんでした。"; });
+$("#pw").onkeydown = e => { if (e.key === "Enter") $("#go").click(); };
+const saved = localStorage.getItem("toto_pw");
+if (saved) open_(saved).catch(() => localStorage.removeItem("toto_pw"));
+
+["budget","alpha","detail"].forEach(id => $("#"+id).addEventListener("input", () => {
+  localStorage.setItem("toto_"+id, id === "detail" ? ($("#detail").checked ? "1" : "0") : $("#"+id).value); render(); }));
+
+// ---------------- 買い目（Python版 build_ticket と同じロジック）
+const OUT3 = ["1","0","2"], OUT4 = ["0","1","2","3"];
+const sum = (a, idx) => idx.reduce((s, k) => s + a[k], 0);
+function slotsOf(K) {
+  if (K.kind === "totoGOAL3") return K.rows.flatMap(r => [
+    {p:r.g_h, v:r.v_h, lab:OUT4, key:r.no+"H"}, {p:r.g_a, v:r.v_a, lab:OUT4, key:r.no+"A"}]);
+  return K.rows.map(r => ({p:r.p, v:r.v, lab:OUT3, key:String(r.no)}));
+}
+function buildTicket(slots, units, alpha) {
+  const score = (s, idx) => { const P = sum(s.p, idx);
+    if (alpha && s.v) { const V = Math.max(sum(s.v, idx), 1e-3); return Math.log(P) + alpha * Math.log(P / V); }
+    return Math.log(P); };
+  const picks = slots.map(s => { let best = 0;
+    for (let k = 1; k < s.p.length; k++) if (score(s, [k]) > score(s, [best])) best = k; return [best]; });
+  for (;;) {
+    const cost = picks.reduce((c, p) => c * p.length, 1);
+    let best = null, bg = 0;
+    slots.forEach((s, i) => { const k = picks[i].length;
+      if (k === s.p.length || Math.floor(cost / k) * (k + 1) > units) return;
+      const c0 = score(s, picks[i]);
+      for (let c = 0; c < s.p.length; c++) { if (picks[i].includes(c)) continue;
+        const g = (score(s, [...picks[i], c]) - c0) / Math.log((k + 1) / k);
+        if (g > bg) { bg = g; best = [i, c]; } } });
+    if (!best) break;
+    picks[best[0]].push(best[1]);
+  }
+  const hit = slots.reduce((h, s, i) => h * sum(s.p, picks[i]), 1);
+  const hasV = slots.every(s => s.v);
+  const share = hasV ? slots.reduce((h, s, i) => h * picks[i].reduce((a, k) => a + s.p[k] * s.v[k], 0) / sum(s.p, picks[i]), 1) : null;
+  const labels = slots.map((s, i) => [...picks[i]].sort((a, b) => a - b).map(k => s.lab[k]).join(""));
+  return {labels, units: picks.reduce((c, p) => c * p.length, 1), hit, share};
+}
+
+// ---------------- 描画
+const C3 = ["#d9534f","#8e8e8e","#2b7bd9"], C4 = ["#9aa5b1","#5cb85c","#f0ad4e","#d9534f"];
+const pct = (x, d = 0) => (x * 100).toFixed(d) + "%";
+function bar(p, labels, colors, thin) {
+  return `<div class="bar${thin ? " vbar" : ""}">` + p.map((x, i) =>
+    `<div style="width:${Math.max(x * 100, .5)}%;background:${colors[i]}">${!thin && x >= .12 ? labels[i] + " " + pct(x) : ""}</div>`).join("") + "</div>";
+}
+const fm = f => `${f.marks || "-"}（${f.gf}-${f.ga}）`;
+const pk = s => [...s].map(c => `<span class="pick">${c}</span>`).join("");
+const esc = s => String(s).replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+
+function render() {
+  $("#upd").textContent = "最終更新 " + D.updated;
+  $("#aval").textContent = Number($("#alpha").value).toFixed(1);
+  $("#errs").innerHTML = D.errors.map(e => `<div class="warn">${esc(e)}</div>`).join("");
+  const names = D.kinds.map(k => k.kind.replace("mini toto-", "mini ")).concat(["分析"]);
+  $("#tabs").innerHTML = names.map((n, i) => `<button class="${i === cur ? "on" : ""}" data-i="${i}">${n}</button>`).join("");
+  $("#tabs").querySelectorAll("button").forEach(b => b.onclick = () => { cur = +b.dataset.i; render(); window.scrollTo(0, 0); });
+  $("#view").innerHTML = cur < D.kinds.length ? kindView(D.kinds[cur]) : analysisView();
+}
+
+function kindView(K) {
+  const units = Math.max(1, Math.floor(+$("#budget").value / 100)), alpha = +$("#alpha").value, det = $("#detail").checked;
+  const slots = slotsOf(K), T = buildTicket(slots, units, alpha);
+  let h = `<div class="card"><span class="big">第${K.round}回 ${K.kind}</span><br>${T.units}口・${(T.units * 100).toLocaleString()}円 ／ 推定的中確率 <b>${pct(T.hit, 3)}</b>`;
+  if (T.share !== null) h += `<br><span class="meta">当たった時に同じく当てている人 約${pct(T.share, 3)}（低いほど高配当）</span>`;
+  h += `<div class="copy" style="margin-top:6px">${slots.map((s, i) => s.key + ":" + T.labels[i]).join(" ")}</div></div>`;
+  if (K.kind === "totoGOAL3") {
+    K.rows.forEach((r, i) => {
+      h += `<div class="card"><div class="hdr"><span>No.${r.no} ${r.date} ${r.time}</span><span>対戦 ${r.h2h}</span></div><div class="teams">${esc(r.home)} vs ${esc(r.away)}</div>`;
+      [["ホーム", r.g_h, r.v_h, r.form_h], ["アウェイ", r.g_a, r.v_a, r.form_a]].forEach(([side, g, v, f], j) => {
+        h += `<div class="meta">${side}の得点 ${pk(T.labels[2 * i + j])}</div>` + bar(g, ["0","1","2","3+"], C4) + (v ? bar(v, [], C4, true) : "") +
+             `<div class="meta">直近 ${fm(f)}</div>`; });
+      h += (r.note ? `<div class="note">${r.note}</div>` : "") + "</div>";
+    });
+  } else {
+    K.rows.forEach((r, i) => {
+      const lam = r.lam ? `${r.lam[0].toFixed(1)}-${r.lam[1].toFixed(1)}` : "-";
+      h += `<div class="card"><div class="hdr"><span>No.${r.no} ${r.date} ${r.time}</span><span>期待得点 ${lam}</span></div>` +
+           `<div class="teams">${esc(r.home)} vs ${esc(r.away)} ${pk(T.labels[i])}</div>` + bar(r.p, OUT3, C3);
+      const m = [];
+      if (r.v) { h += bar(r.v, [], C3, true);
+        m.push("投票率 " + r.v.map((v, k) => { const t = `${OUT3[k]}:${pct(v)}`; return r.p[k] / Math.max(v, 1e-3) >= 1.25 ? `<span class="val">${t}</span>` : t; }).join(" / ")); }
+      m.push(`直近5 ${fm(r.form_h)} ／ ${fm(r.form_a)}`);
+      m.push(`対戦成績(H視点) ${r.h2h} ／ 中${r.rest_h ?? "-"}日・中${r.rest_a ?? "-"}日`);
+      if (r.elo_h) m.push(`Elo ${r.elo_h} vs ${r.elo_a}`);
+      if (det && r.p_poi && r.p_elo) m.push("ポアソン " + r.p_poi.map(x => pct(x)).join("/") + "　Elo " + r.p_elo.map(x => pct(x)).join("/"));
+      h += `<div class="meta">${m.join("<br>")}</div>` + (r.note ? `<div class="note">${r.note}</div>` : "") + "</div>";
+    });
+  }
+  return h + `<p class="legend">太い帯＝モデル予想、細い帯＝一般の投票率。オレンジ＝モデル確率が投票率の1.25倍以上（人気薄で妙味あり）。</p>`;
+}
+
+function analysisView() {
+  let h = `<div class="card"><b>モデルの成績（バックテスト）</b><div class="meta">${D.test}を、それ以前のデータだけで予測。対数損失・Brierは小さいほど良い。</div>
+  <table><tr><th>モデル</th><th>対数損失</th><th>Brier</th><th>本命的中</th></tr>` +
+  D.backtest.map(b => `<tr><td>${b.name}</td><td>${b.ll.toFixed(3)}</td><td>${b.brier.toFixed(3)}</td><td>${pct(b.acc, 1)}</td></tr>`).join("") + "</table></div>";
+  h += `<div class="card"><b>確率の当てはまり</b><div class="meta">「平均予測」と「実際」が近いほど、表示している確率が信用できます。</div>
+  <table><tr><th>予測確率帯</th><th>試合数</th><th>平均予測</th><th>実際</th></tr>` +
+  D.calib.map(c => `<tr><td>${c.band}</td><td>${c.n}</td><td>${pct(c.pred, 1)}</td><td>${pct(c.act, 1)}</td></tr>`).join("") + "</table></div>";
+  h += `<div class="card"><b>チーム力ランキング</b><div class="meta">攻撃力＝得点の倍率、守備力＝失点の倍率（小さいほど堅い）</div>
+  <table><tr><th>#</th><th>チーム</th><th>攻撃</th><th>守備</th><th>Elo</th></tr>` +
+  D.ratings.map((r, i) => `<tr><td>${i + 1}</td><td style="text-align:left">${esc(r.team)}</td><td>${r.att.toFixed(2)}</td><td>${r.def.toFixed(2)}</td><td>${r.elo}</td></tr>`).join("") + "</table></div>";
+  h += `<div class="card meta">学習データ ${D.n_res.toLocaleString()}試合（${D.res_range}）／ ホームの得点倍率 ${D.home_adv}倍 ／ アンサンブル重み ポアソン${pct(D.w_poi)}
+  <details><summary>更新ログ</summary><pre style="white-space:pre-wrap">${esc(D.logs.join("\n"))}</pre></details>
+  <button class="main" onclick="localStorage.removeItem('toto_pw');location.reload()">ログアウト</button></div>`;
+  return h;
+}
+</script>
+</body>
+</html>
