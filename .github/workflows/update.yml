@@ -2,10 +2,15 @@ name: update
 
 on:
   schedule:
-    - cron: "17 * * * *"               # 毎時（UTC表記。日本時間でも毎時）
+    - cron: "17 * * * *"               # 毎時
     - cron: "*/20 0-12 * * 5,6,0"      # 金土日の日本時間 9〜21時は20分ごと
     - cron: "0 3 1 * *"                # 毎月1日：自動実行が止められないよう空コミット
-  workflow_dispatch:                    # スマホの GitHub アプリ / ブラウザから手動実行
+  workflow_dispatch:
+    inputs:
+      force_refresh:
+        description: "過去の試合結果を全シーズン取り直す"
+        type: boolean
+        default: false
   push:
     branches: [main]
 
@@ -35,7 +40,7 @@ jobs:
   build:
     if: github.event.schedule != '0 3 1 * *'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 
@@ -46,7 +51,6 @@ jobs:
 
       - run: pip install -r requirements.txt
 
-      # 取得済みデータ・前回の予想を引き継ぐ（リポジトリには公開されない）
       - uses: actions/cache/restore@v4
         with:
           path: data
@@ -56,6 +60,7 @@ jobs:
       - name: build site
         env:
           SITE_PASSWORD: ${{ secrets.SITE_PASSWORD }}
+          FORCE_REFRESH: ${{ inputs.force_refresh && '1' || '0' }}
           TZ: Asia/Tokyo
         run: python build_site.py
 
