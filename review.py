@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-予想の保存（アーカイブ）と振り返り
+予想の保存（アーカイブ）と振り返り   v3.1
   - 毎回の予想を保存し、販売締切を過ぎたら確定（以後は上書きしない）
-  - 終わった回は試合結果と照合し、外れた試合に分析コメントを付ける
-  - 外れ方の傾向から「次に検討すべき要素」を提案する（learning.py が検証して採否を決定）
-  - 状態（アーカイブ＋学習記録）は暗号化して公開サイトにも置き、キャッシュが消えても復元する
+  - 直前の回は、公式「くじ結果」ページから対象試合とスコアを取得して照合
+    （予想が保存されていない回は、試合前のデータだけで予想を再現）
+  - 外れた試合に分析コメントを付け、外れ方の傾向から次の検討要素を提案
 """
 import base64
 import json
@@ -19,9 +19,9 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 import engine as E
 
 ITER = 250_000
-BASE3 = np.array([0.43, 0.27, 0.30])       # 比較用の「平均的な予想」
-LABEL3 = {0: "1（ホーム勝ち）", 1: "0（引き分け）", 2: "2（アウェイ勝ち）"}
+BASE3 = np.array([0.43, 0.27, 0.30])
 KEEP_ROUNDS = 40
+LOOKBACK = 6          # 直前の回を探す範囲（現在の回から何回さかのぼるか）
 
 
 # ---------------------------------------------------------------- 暗号化
@@ -45,8 +45,6 @@ def _jd(o):
         return o.tolist()
     if isinstance(o, (np.floating, np.integer)):
         return o.item()
-    if isinstance(o, (pd.Timestamp,)):
-        return o.isoformat()
     if hasattr(o, "isoformat"):
         return o.isoformat()
     raise TypeError(type(o))
@@ -130,83 +128,120 @@ def archive_current(state, card, analysis, log=print):
         ex = arch.get(key)
         if ex and ex.get("frozen"):
             continue
-        if locked:
-            if ex:
-                ex["frozen"] = True          # 締切直前に保存した予想をそのまま確定
-                log(f"第{rnd}回 {kind}: 予想を確定")
-                continue
+        if locked and ex:
+            ex["frozen"] = True
+            log(f"第{rnd}回 {kind}: 予想を確定")
+            continue
         arch[key] = make_entry(kind, rnd, dl, rows, now)
         arch[key]["frozen"] = bool(locked)
 
 
-def backfill_previous(state, card, res, log=print):
-    """前回分の予想が保存されていない場合、当時のデータだけで予想を再現して保存（初回用）"""
-    arch = state.setdefault("archive", {})
-    today = E.now_jst().date()
-    cur = {k: int(g["round"].iloc[0]) for k, g in card.groupby("kind")}
-    fetched, preds = {}, {}
-    for kind, rnd in cur.items():
-        if any(int(k.split("|")[0]) < rnd and k.endswith("|" + kind) for k in arch):
-            continue
-        for r in range(rnd - 1, rnd - 4, -1):
-            if r not in fetched:
-                try:
-                    fetched[r] = E.fetch_card(r)
-                except Exception as e:  # noqa
-                    fetched[r] = pd.DataFrame()
-                    log(f"第{r}回の対象試合を取得できず: {e}")
-            c = fetched[r]
-            g = c[c["kind"] == kind] if len(c) else c
-            if g.empty or max(g["date"]) >= today:
-                continue
-            first = pd.Timestamp(min(g["date"]))
-            if r not in preds:
-                hist = res[res["date"] < first]
-                if len(hist) < 300:
-                    break
-                L = state.get("learning", {})
-                preds[r] = E.Predictor.fit(hist, first, w=L.get("w", 0.5),
-                                           stacker=E.Stacker.from_dict(L.get("stacker")), vote_b=L.get("vote_b", 0.0))
-            pred = preds[r]
-            rows = []
-            for _, m in g.sort_values("no").iterrows():
-                d = pred.predict(m["home"], m["away"], m["date"])
-                d.update({"no": int(m["no"]), "date": m["date"], "time": m["time"], "home": m["home"], "away": m["away"]})
-                rows.append(d)
-            vk = "toto" if kind.startswith("mini") else kind
+# ---------------------------------------------------------------- 公式結果
+class ResultCache:
+    """公式『くじ結果』ページを回ごとに1回だけ取得"""
+
+    def __init__(self, log=print):
+        self.d, self.log = {}, log
+
+    def get(self, rnd):
+        if rnd not in self.d:
             try:
-                n = len(c[c["kind"] == vk]) * (2 if vk == "totoGOAL3" else 1)
-                v = E.fetch_vote_rates(r, vk, n) if n else None
-                if v and kind == "totoGOAL3":
-                    for i, row in enumerate(rows):
-                        row["v_h"], row["v_a"] = np.array(v[2 * i]), np.array(v[2 * i + 1])
-                elif v:
-                    t = c[c["kind"] == "toto"].sort_values("no")
-                    key = {(E.to_short(h), E.to_short(a)): vv for (h, a), vv in zip(zip(t["home"], t["away"]), v)}
-                    for row in rows:
-                        vv = key.get((row["hs"], row["as"]))
-                        if vv:
-                            row["v"] = np.array(vv)
-                            row["p_model"] = row["p"]
-                            row["p"] = pred.blend_vote(row["p"], row["v"])
+                self.d[rnd] = E.fetch_round_result(rnd)
             except Exception as e:  # noqa
-                log(f"第{r}回 {kind} の投票率なし: {e}")
-            dl = g["deadline"].dropna().iloc[0] if g["deadline"].notna().any() else None
-            arch[f"{r}|{kind}"] = make_entry(kind, r, dl, rows, E.now_jst(), reconstructed=True)
-            log(f"第{r}回 {kind}: 当時のデータで予想を再現して保存")
+                self.log(f"第{rnd}回のくじ結果を取得できず: {e}")
+                self.d[rnd] = pd.DataFrame()
+        return self.d[rnd]
+
+
+def _official(g):
+    """{試合No: [ホーム得点, アウェイ得点] or None}"""
+    out = {}
+    for _, m in g.iterrows():
+        ok = not (pd.isna(m["hg"]) or pd.isna(m["ag"]))
+        out[str(int(m["no"]))] = [int(m["hg"]), int(m["ag"])] if ok else None
+    return out
+
+
+def find_previous(state, cur, rc, res, log=print):
+    """
+    くじ種別ごとに『現在の回より前で、いちばん新しい回』を公式結果ページで特定し、
+      - 予想が保存済みなら公式スコアを付ける
+      - 保存されていなければ、その回の試合前のデータだけで予想を再現して保存
+    """
+    arch = state.setdefault("archive", {})
+    prev = {}
+    for kind, rnd in cur.items():
+        for r in range(rnd - 1, rnd - 1 - LOOKBACK, -1):
+            c = rc.get(r)
+            g = c[(c["kind"] == kind) & (c["round"] == r)] if len(c) else c
+            if g.empty:
+                continue
+            key = f"{r}|{kind}"
+            if key not in arch:
+                try:
+                    arch[key] = reconstruct(kind, r, c, g, res, state, log)
+                except Exception as e:  # noqa
+                    log(f"第{r}回 {kind} の予想の再現に失敗: {e}")
+                    break
+            arch[key]["official"] = _official(g)
+            prev[kind] = key
             break
+        else:
+            log(f"{kind}: 直前の回のくじ結果が見つかりません（第{rnd - LOOKBACK}〜{rnd - 1}回）")
+    return prev
 
 
-# ---------------------------------------------------------------- 結果の照合
-def find_result(res, hs, as_, d):
-    d = pd.Timestamp(d)
-    g = res[(res["home"] == hs) & (res["away"] == as_) & ((res["date"] - d).abs() <= pd.Timedelta(days=3))]
+def reconstruct(kind, r, c, g, res, state, log):
+    first = pd.Timestamp(min(g["date"]))
+    hist = res[res["date"] < first]
+    if len(hist) < 300:
+        raise RuntimeError("その回より前の試合データが不足")
+    L = state.get("learning", {})
+    pred = E.Predictor.fit(hist, first, w=L.get("w", 0.5),
+                           stacker=E.Stacker.from_dict(L.get("stacker")), vote_b=L.get("vote_b", 0.0))
+    rows = []
+    for _, m in g.sort_values("no").iterrows():
+        d = pred.predict(m["home"], m["away"], m["date"])
+        d.update({"no": int(m["no"]), "date": m["date"], "time": "", "home": m["home"], "away": m["away"]})
+        rows.append(d)
+    # 投票率（mini は toto の同じ試合を流用）
+    vk = "toto" if kind.startswith("mini") else kind
+    try:
+        src = c[(c["kind"] == vk) & (c["round"] == r)].sort_values("no")
+        n = len(src) * (2 if vk == "totoGOAL3" else 1)
+        v = E.fetch_vote_rates(r, vk, n) if n else None
+        if v and kind == "totoGOAL3":
+            for i, row in enumerate(rows):
+                row["v_h"], row["v_a"] = np.array(v[2 * i]), np.array(v[2 * i + 1])
+        elif v:
+            key = {(E.to_short(h), E.to_short(a)): vv for (h, a), vv in zip(zip(src["home"], src["away"]), v)}
+            for row in rows:
+                vv = key.get((row["hs"], row["as"]))
+                if vv:
+                    row["v"] = np.array(vv)
+                    row["p_model"] = row["p"]
+                    row["p"] = pred.blend_vote(row["p"], row["v"])
+    except Exception as e:  # noqa
+        log(f"第{r}回 {kind} の投票率なし: {e}")
+    log(f"第{r}回 {kind}: 試合前のデータだけで予想を再現して保存")
+    return make_entry(kind, r, None, rows, E.now_jst(), reconstructed=True)
+
+
+def _score(e, r, res):
+    off = (e.get("official") or {}).get(str(r["no"]))
+    if off:
+        return tuple(off)
+    if e.get("official") is not None and str(r["no"]) in e["official"]:
+        return None                       # 公式ページで未確定
+    d = pd.Timestamp(r["date"])
+    g = res[(res["home"] == r["hs"]) & (res["away"] == r["as"]) & ((res["date"] - d).abs() <= pd.Timedelta(days=3))]
     if g.empty:
         return None
-    r = g.iloc[(g["date"] - d).abs().argsort().iloc[0]]
-    return int(r["hg"]), int(r["ag"])
+    m = g.iloc[(g["date"] - d).abs().argsort().iloc[0]]
+    return int(m["hg"]), int(m["ag"])
 
 
+# ---------------------------------------------------------------- コメント
 def _pct(x):
     return f"{x * 100:.0f}%"
 
@@ -244,10 +279,10 @@ def comment_3way(r, pick, act, hg, ag):
         if wf.get("pts", 7) - lf.get("pts", 7) >= 4:
             c.append(f"{wt}は直近5試合の勝点で上回っていました（{wf['pts']} 対 {lf['pts']}）。勢いの差が出た可能性。")
     rh, ra = r.get("rest_h"), r.get("rest_a")
-    if rh is not None and ra is not None and act != pick:
-        fav_rest, other = (rh, ra) if pick == 0 else (ra, rh) if pick == 2 else (None, None)
+    if rh is not None and ra is not None and pick != 1:
+        fav_rest, other = (rh, ra) if pick == 0 else (ra, rh)
         fav = r["home"] if pick == 0 else r["away"]
-        if fav_rest is not None and fav_rest <= 4 and other - fav_rest >= 3:
+        if fav_rest <= 4 and other - fav_rest >= 3:
             c.append(f"本命の{fav}は中{fav_rest}日（相手は中{other}日）で、連戦の疲労が影響した可能性。")
     pp, pe = r.get("p_poi"), r.get("p_elo")
     if pp and pe and int(np.argmax(pp)) != int(np.argmax(pe)):
@@ -267,34 +302,30 @@ def comment_goal(team, g_pred, picks, actual_g, lam):
     return c
 
 
+# ---------------------------------------------------------------- 振り返り
 def review_entry(e, res):
-    today = E.now_jst().date()
     rows, known, hits, ll, ll_b, t_ok, t_miss = [], 0, 0, [], [], True, 0
-    last_date = max(pd.Timestamp(r["date"]).date() for r in e["rows"])
-    miss_types = {"draw": 0, "upset": 0, "away": 0, "home": 0}
+    miss_types = {"draw": 0, "upset": 0}
     if e["kind"] == "totoGOAL3":
         for i, r in enumerate(e["rows"]):
-            sc = find_result(res, r["hs"], r["as"], r["date"])
-            for j, (team, gk, lam_i) in enumerate(((r["home"], "g_h", 0), (r["away"], "g_a", 1))):
+            sc = _score(e, r, res)
+            for j, (team, gk, li) in enumerate(((r["home"], "g_h", 0), (r["away"], "g_a", 1))):
                 picks = e["ticket"][2 * i + j]
                 item = {"no": f"{r['no']}{'H' if j == 0 else 'A'}", "team": team, "match": f"{r['home']} vs {r['away']}",
                         "date": r["date"], "p": r[gk], "picks": picks, "actual": None}
                 if sc:
                     g = sc[j]; b = min(g, 3); known += 1
-                    item.update({"actual": b, "goals": g, "score": f"{sc[0]}-{sc[1]}", "hit": b in picks,
-                                 "p_act": r[gk][b]})
+                    item.update({"actual": b, "goals": g, "score": f"{sc[0]}-{sc[1]}", "hit": b in picks, "p_act": r[gk][b]})
                     hits += b in picks
                     ll.append(-np.log(max(r[gk][b], 1e-9)))
                     if b not in picks:
                         t_ok = False; t_miss += 1
-                        item["comments"] = comment_goal(team, r[gk], picks, g, r["lam"][lam_i])
-                else:
-                    t_ok = None if t_ok else t_ok
+                        item["comments"] = comment_goal(team, r[gk], picks, g, (r.get("lam") or [None, None])[li])
                 rows.append(item)
     else:
         for i, r in enumerate(e["rows"]):
             p = np.asarray(r["p"]); pick = int(np.argmax(p)); picks = e["ticket"][i]
-            sc = find_result(res, r["hs"], r["as"], r["date"])
+            sc = _score(e, r, res)
             item = {"no": r["no"], "home": r["home"], "away": r["away"], "date": r["date"], "p": r["p"], "v": r.get("v"),
                     "pick": pick, "picks": picks, "actual": None}
             if sc:
@@ -309,21 +340,16 @@ def review_entry(e, res):
                     t_ok = False; t_miss += 1
                 if not hit:
                     item["comments"] = comment_3way(r, pick, act, hg, ag)
-                    if act == 1:
-                        miss_types["draw"] += 1
-                    if p[act] < 0.2:
-                        miss_types["upset"] += 1
+                    miss_types["draw"] += act == 1
+                    miss_types["upset"] += p[act] < 0.2
                     item["feat"] = {"rest_h": r.get("rest_h"), "rest_a": r.get("rest_a"),
                                     "form_h": (r.get("form_h") or {}).get("pts"), "form_a": (r.get("form_a") or {}).get("pts"),
                                     "vote_right": bool(r.get("v") and int(np.argmax(r["v"])) == act),
                                     "model_split": bool(r.get("p_poi") and r.get("p_elo") and
                                                         int(np.argmax(r["p_poi"])) != int(np.argmax(r["p_elo"]))),
                                     "act": act, "pick": pick}
-            else:
-                t_ok = None if t_ok else t_ok
             rows.append(item)
     n = len(rows)
-    complete = known == n or (today - last_date).days >= 4
     if known == 0:
         ticket = "結果待ち"
     elif t_ok is False:
@@ -333,9 +359,10 @@ def review_entry(e, res):
     else:
         ticket = "判定待ち"
     s = {"round": e["round"], "kind": e["kind"], "reconstructed": e.get("reconstructed", False),
-         "n": n, "known": known, "hits": hits, "ticket": ticket, "ticket_units": int(np.prod([len(t) for t in e["ticket"]])),
+         "n": n, "known": known, "hits": hits, "ticket": ticket,
+         "ticket_units": int(np.prod([len(t) for t in e["ticket"]])),
          "ll": float(np.mean(ll)) if ll else None, "ll_base": float(np.mean(ll_b)) if ll_b else None,
-         "miss_types": miss_types, "complete": complete, "last_date": str(last_date)}
+         "miss_types": miss_types, "complete": known == n}
     s["summary"] = summary_text(s)
     return {"summary": s, "rows": rows}
 
@@ -344,22 +371,24 @@ def summary_text(s):
     if not s["known"]:
         return "まだ結果が出ていません。"
     unit = "枠" if s["kind"] == "totoGOAL3" else "試合"
-    t = [f"結果が出た{s['known']}{unit}のうち、{'買い目' if s['kind'] == 'totoGOAL3' else '本命'}は{s['hits']}{unit}的中"
-         f"（{s['hits'] / s['known']:.0%}）。1,000円の買い目は「{s['ticket']}」。"]
+    t = []
+    if not s["complete"]:
+        t.append(f"{s['n']}{unit}中{s['known']}{unit}の結果が確定（残りは結果待ち）。")
+    t.append(f"結果が出た{s['known']}{unit}のうち、{'買い目' if s['kind'] == 'totoGOAL3' else '本命'}は{s['hits']}{unit}的中"
+             f"（{s['hits'] / s['known']:.0%}）。1,000円の買い目は「{s['ticket']}」。")
     if s["ll"] is not None and s["ll_base"] is not None:
         better = s["ll"] < s["ll_base"]
         t.append(f"確率の当てはまり（対数損失）は {s['ll']:.3f}、平均的な予想なら {s['ll_base']:.3f} で、"
                  f"{'平均より良い' if better else '平均より悪い'}結果でした。")
-    mt = s["miss_types"]
     misses = s["known"] - s["hits"]
     if misses and s["kind"] != "totoGOAL3":
-        t.append(f"外れ{misses}試合のうち、引き分けの見逃し{mt['draw']}、予想確率20%未満の番狂わせ{mt['upset']}。")
+        t.append(f"外れ{misses}試合のうち、引き分けの見逃し{s['miss_types']['draw']}、"
+                 f"予想確率20%未満の番狂わせ{s['miss_types']['upset']}。")
     return "".join(t)
 
 
 # ---------------------------------------------------------------- 外れ方の傾向 → 検討要素の提案
 def triggers(reviews):
-    """外れた試合の特徴から、次に検証すべき検討要素を提案する"""
     seen, miss = set(), []
     for rv in reviews:
         if rv["summary"]["kind"] == "totoGOAL3":
@@ -380,13 +409,12 @@ def triggers(reviews):
         out.append(("closeness", f"外れ{n}試合中{draw}試合が引き分けの見逃し"))
         out.append(("goal_env", "引き分けの見逃しが多いため、得点が少なくなりそうな試合の扱いも検証"))
     tired = sum(1 for m in miss if m["rest_h"] is not None and m["rest_a"] is not None and m["pick"] != 1 and
-                ((m["rest_h"] if m["pick"] == 0 else m["rest_a"]) or 99) <= 4 and
-                abs((m["rest_h"] or 0) - (m["rest_a"] or 0)) >= 3)
-    if tired >= 1:
+                (m["rest_h"] if m["pick"] == 0 else m["rest_a"]) <= 4 and abs(m["rest_h"] - m["rest_a"]) >= 3)
+    if tired:
         out.append(("rest_diff", f"本命が連戦で休養日が短かった外れが{tired}試合"))
-    form = sum(1 for m in miss if m["act"] != 1 and m["form_h"] is not None and
+    form = sum(1 for m in miss if m["act"] != 1 and m["form_h"] is not None and m["form_a"] is not None and
                ((m["form_h"] - m["form_a"]) if m["act"] == 0 else (m["form_a"] - m["form_h"])) >= 4)
-    if form >= 1:
+    if form:
         out.append(("form_diff", f"直近の勢いで上回るチームが勝った外れが{form}試合"))
     vr = sum(m["vote_right"] for m in miss)
     if vr >= 2:

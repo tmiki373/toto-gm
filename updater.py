@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""取得 → 振り返り → 学習（検討要素の追加・検証）→ 予想 → 保存 をまとめて実行"""
+"""取得 → 振り返り → 学習（検討要素の追加・検証）→ 予想 → 保存 をまとめて実行   v3.1"""
 import pickle
 import traceback
 from pathlib import Path
@@ -34,7 +34,7 @@ def refresh(force_results=False, password=None, log=print):
         logs.append(f"{E.now_jst():%H:%M:%S} {m}")
         log(m)
 
-    # 1) 対象試合
+    # 1) 対象試合（次回）
     try:
         card = E.fetch_card()
         lg("対象試合: " + ", ".join(f"{k} 第{g['round'].iloc[0]}回 {len(g)}試合" for k, g in card.groupby("kind")))
@@ -79,42 +79,42 @@ def refresh(force_results=False, password=None, log=print):
     if lag > 21:
         errors.append(f"試合結果が {last:%Y/%m/%d} で止まっています（{lag}日前）。")
 
-    # 4) 過去の予想を読み込み → 振り返り
+    # 4) 直前の回の振り返り（公式くじ結果ページで回とスコアを特定）
     state = R.load_state(DATA, password, lg)
-    try:
-        R.backfill_previous(state, card, res, lg)
-    except Exception:
-        lg("前回分の再現で失敗（振り返りなしで続行）:\n" + traceback.format_exc())
     cur = {k: int(g["round"].iloc[0]) for k, g in card.groupby("kind")}
+    rc = R.ResultCache(lg)
+    try:
+        prev_keys = R.find_previous(state, cur, rc, res, lg)
+    except Exception:
+        lg("直前の回の特定で失敗:\n" + traceback.format_exc())
+        prev_keys = {}
     reviewed = set(state.get("learning", {}).get("reviewed", []))
-    reviews, new_reviews = {}, []
     arch = state.get("archive", {})
-    for key in sorted(arch, key=lambda k: int(k.split("|")[0])):
+    reviews, new_reviews = {}, []
+    for kind, key in prev_keys.items():
         e = arch[key]
-        if e["kind"] in cur and e["round"] >= cur[e["kind"]]:
-            continue
         try:
             rv = R.review_entry(e, res)
         except Exception:
-            lg(f"第{e['round']}回 {e['kind']} の振り返りで失敗:\n" + traceback.format_exc())
+            lg(f"第{e['round']}回 {kind} の振り返りで失敗:\n" + traceback.format_exc())
             continue
-        if e["kind"] != "totoGOAL3":
+        if kind != "totoGOAL3":
             e["_review_rows"] = [{"home": r["home"], "away": r["away"], "date": r["date"], "actual": it["actual"],
                                   "v": r.get("v"), "p_model": r.get("p_model") or r["p"]}
                                  for r, it in zip(e["rows"], rv["rows"])]
-        reviews[e["kind"]] = rv            # 種別ごとに最新の回が残る＝直前1回
-        if rv["summary"]["complete"] and rv["summary"]["known"] and key not in reviewed:
+        reviews[kind] = rv
+        s = rv["summary"]
+        lg(f"振り返り {kind} 第{s['round']}回: 結果 {s['known']}/{s['n']} 確定・的中 {s['hits']}")
+        if s["complete"] and key not in reviewed:
             new_reviews.append(rv)
-    lg(f"振り返り: {', '.join(f'{k} 第{v['summary']['round']}回' for k, v in reviews.items()) or 'なし'}"
-       f" / 新たに完了 {len(new_reviews)}件")
 
-    # 5) 学習（検討要素の追加・検証・採否）
+    # 5) 学習（検討要素の追加・検証・採否）… 結果が全部そろった回だけを学習に使う
     lg("学習開始")
     M = E.train(res)
     L = LRN.update(state, M, new_reviews, log=lg)
     lg(f"学習完了 / 採用中の検討要素: {[E.FEAT_INFO[a][0] for a in L['active']] or 'なし'}")
 
-    # 6) 予想
+    # 6) 次回の予想
     pred = E.Predictor(res, M["poisson"], M["elo"], M["w"], M["base"], M["stacker"], M["vote_b"])
     analysis = E.analyze_card(card, pred, votes)
     try:
