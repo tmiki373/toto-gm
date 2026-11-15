@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """最新開催回・投票率・試合結果を取り直し、モデルを再学習して data/snapshot.pkl に保存する"""
 import pickle
+import traceback
 from pathlib import Path
 
 import engine as E
@@ -8,17 +9,23 @@ import engine as E
 ROOT = Path(__file__).resolve().parent
 DATA = ROOT / "data"
 SNAP = DATA / "snapshot.pkl"
+SNAP_VER = 2          # 保存形式のバージョン（古い形式は読み込まない）
 
 
 def load_snapshot():
     if SNAP.exists():
-        with open(SNAP, "rb") as f:
-            return pickle.load(f)
+        try:
+            with open(SNAP, "rb") as f:
+                return pickle.load(f)
+        except Exception:
+            return None
     return None
 
 
 def refresh(force_results=False, log=print):
     prev = load_snapshot() or {}
+    if prev.get("ver") != SNAP_VER:
+        prev = {}
     logs, errors = [], []
 
     def lg(m):
@@ -42,6 +49,13 @@ def refresh(force_results=False, log=print):
         res = prev.get("res")
         if res is None:
             raise
+    res = res.dropna(subset=["date", "home", "away", "hg", "ag"]).copy()
+    res["comp"] = res["comp"].fillna("").astype(str)
+    res["home"], res["away"] = res["home"].astype(str), res["away"].astype(str)
+    res[["hg", "ag"]] = res[["hg", "ag"]].astype(int)
+    res = res.sort_values("date").reset_index(drop=True)
+    lg(f"結果データ合計: {len(res)}試合")
+
     # 3) 投票率（mini は toto の同じ試合を流用）
     votes = {}
     for kind, g in card.groupby("kind"):
@@ -61,17 +75,35 @@ def refresh(force_results=False, log=print):
             vv = [key.get((E.to_short(h), E.to_short(a))) for h, a in zip(g["home"], g["away"])]
             if len(g) and all(x is not None for x in vv):
                 votes[kind] = vv
+
     # 4) 鮮度チェック
     last = res["date"].max()
     lag = (E.now_jst().date() - last.date()).days
     if lag > 21:
         errors.append(f"試合結果が {last:%Y/%m/%d} で止まっています（{lag}日前）。予想は古いデータに基づいています。")
-    # 5) 学習・分析
-    M = E.train(res)
-    analysis = E.analyze_card(card, res, M, votes)
-    lg(f"学習 {len(res)}試合 / アンサンブル重み ポアソン{M['w']:.0%}")
-    snap = {"updated": E.now_jst(), "card": card, "res": res, "votes": votes, "model": M,
-            "analysis": analysis, "leagues": E.team_leagues(res), "logs": logs, "errors": errors}
+
+    # 5) 学習・分析（どこで失敗したか分かるよう段階ごとにログ）
+    lg("学習開始")
+    try:
+        M = E.train(res)
+    except Exception:
+        lg("学習で失敗:\n" + traceback.format_exc())
+        raise
+    lg(f"学習完了 / アンサンブル重み ポアソン{M['w']:.0%}")
+    try:
+        analysis = E.analyze_card(card, res, M, votes)
+    except Exception:
+        lg("試合分析で失敗:\n" + traceback.format_exc())
+        raise
+    try:
+        leagues = E.team_leagues(res)
+    except Exception as e:
+        lg(f"所属リーグの判定に失敗（順位表示なしで続行）: {e}")
+        leagues = {}
+    lg("分析完了")
+
+    snap = {"ver": SNAP_VER, "updated": E.now_jst(), "card": card, "res": res, "votes": votes, "model": M,
+            "analysis": analysis, "leagues": leagues, "logs": logs, "errors": errors}
     DATA.mkdir(exist_ok=True)
     tmp = SNAP.with_suffix(".tmp")
     with open(tmp, "wb") as f:

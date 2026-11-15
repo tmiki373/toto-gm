@@ -8,6 +8,7 @@ import json
 import math
 import os
 import shutil
+import traceback
 from pathlib import Path
 
 import numpy as np
@@ -33,14 +34,13 @@ def f(x, nd=4):
 
 
 def form(fm):
-    return {"marks": fm["marks"], "gf": int(fm["gf"]), "ga": int(fm["ga"])}
+    return {"marks": fm.get("marks", ""), "gf": int(fm.get("gf", 0)), "ga": int(fm.get("ga", 0))}
 
 
 def to_payload(snap):
     M, A, card = snap["model"], snap["analysis"], snap["card"]
     leagues = snap.get("leagues") or E.team_leagues(snap["res"])
 
-    # チーム力ランキング（現所属カテゴリ内の Elo 順位も付与）
     res = snap["res"]
     recent = res[res["date"] >= res["date"].max() - np.timedelta64(200, "D")]
     active = set(recent["home"]) | set(recent["away"])
@@ -55,7 +55,7 @@ def to_payload(snap):
 
     def tinfo(short):
         lg, rk = rank.get(short, ("", None))
-        return {"lg": lg, "rank": rk}
+        return {"lg": lg, "rank": int(rk) if rk is not None else None}
 
     kinds = []
     for kind in E.KINDS:
@@ -64,16 +64,20 @@ def to_payload(snap):
         g = card[card["kind"] == kind]
         rows = []
         for r in A[kind]:
+            hs = r.get("hs") or E.to_short(r["home"])
+            as_ = r.get("as") or E.to_short(r["away"])
+            lam = r.get("lam") or (None, None)
             d = {"no": r["no"], "date": r["date"].strftime("%m/%d"),
-                 "dow": "月火水木金土日"[r["date"].weekday()], "time": r["time"],
-                 "home": r["home"], "away": r["away"], "ti_h": tinfo(r["hs"]), "ti_a": tinfo(r["as"]),
+                 "dow": "月火水木金土日"[r["date"].weekday()], "time": r.get("time", ""),
+                 "home": r["home"], "away": r["away"], "ti_h": tinfo(hs), "ti_a": tinfo(as_),
                  "p": f(r["p"]), "v": f(r.get("v")),
-                 "lam": f(r["lam"], 2) if r["lam"][0] is not None else None,
-                 "scores": [[i, j, f(p, 3)] for i, j, p in r["scores"]],
-                 "p_poi": f(r["p_poi"]), "p_elo": f(r["p_elo"]),
-                 "elo_h": f(r["elo_h"], 0), "elo_a": f(r["elo_a"], 0),
-                 "form_h": form(r["form_h"]), "form_a": form(r["form_a"]),
-                 "rest_h": r["rest_h"], "rest_a": r["rest_a"], "h2h": r["h2h"], "note": r["note"]}
+                 "lam": f(lam, 2) if lam[0] is not None else None,
+                 "scores": [[i, j, f(p, 3)] for i, j, p in r.get("scores", [])],
+                 "p_poi": f(r.get("p_poi")), "p_elo": f(r.get("p_elo")),
+                 "elo_h": f(r.get("elo_h"), 0), "elo_a": f(r.get("elo_a"), 0),
+                 "form_h": form(r.get("form_h", {})), "form_a": form(r.get("form_a", {})),
+                 "rest_h": r.get("rest_h"), "rest_a": r.get("rest_a"),
+                 "h2h": r.get("h2h", ""), "note": r.get("note", "")}
             if kind == "totoGOAL3":
                 d.update({"g_h": f(r["g_h"]), "g_a": f(r["g_a"]), "v_h": f(r.get("v_h")), "v_a": f(r.get("v_a"))})
             rows.append(d)
@@ -82,17 +86,17 @@ def to_payload(snap):
 
     bt = [{"name": n, "ll": f(r["対数損失"]), "brier": f(r["Brier"]), "acc": f(r["的中率(本命)"])}
           for n, r in M["backtest"].iterrows()]
-    cal = [{"band": r["予測確率帯"], "n": int(r["試合数"]), "pred": f(r["平均予測"]), "act": f(r["実際の的中率"])}
+    cal = [{"band": str(r["予測確率帯"]), "n": int(r["試合数"]), "pred": f(r["平均予測"]), "act": f(r["実際の的中率"])}
            for _, r in M["calib"].iterrows()]
     s, e, n = M["test_period"]
     last = res["date"].max()
-    by_season = res.assign(y=res["date"].dt.to_period("M").astype(str)).groupby("y").size()
+    by_month = res.assign(y=res["date"].dt.to_period("M").astype(str)).groupby("y").size()
     return {"updated": snap["updated"].isoformat(), "errors": snap["errors"], "logs": snap["logs"],
             "kinds": kinds, "backtest": bt, "calib": cal, "ratings": ratings,
             "test": f"{s:%Y/%m/%d}〜{e:%Y/%m/%d}の{n}試合",
             "n_res": len(res), "res_from": f"{res['date'].min():%Y/%m/%d}", "res_to": f"{last:%Y/%m/%d}",
             "lag": (E.now_jst().date() - last.date()).days,
-            "monthly": [[k, int(v)] for k, v in by_season.tail(18).items()],
+            "monthly": [[k, int(v)] for k, v in by_month.tail(18).items()],
             "home_adv": f(math.exp(M["poisson"].home_adv), 2), "w_poi": f(M["w"], 2)}
 
 
@@ -111,10 +115,12 @@ def main():
     try:
         snap = U.refresh(force_results=os.environ.get("FORCE_REFRESH") == "1")
     except Exception as e:
+        print("=" * 60, "\n[更新処理でエラー] 以下が本当の原因です\n", "=" * 60, flush=True)
+        traceback.print_exc()
         snap = U.load_snapshot()
-        if snap is None:
-            raise
-        snap["errors"] = snap.get("errors", []) + [f"今回の更新に失敗したため前回のデータを表示: {e}"]
+        if snap is None or snap.get("ver") != U.SNAP_VER:
+            raise SystemExit("前回の互換データがないため停止します（上のエラーを確認してください）")
+        snap["errors"] = snap.get("errors", []) + [f"今回の更新に失敗したため前回のデータを表示: {type(e).__name__}: {e}"]
     payload = to_payload(snap)
     OUT.mkdir(exist_ok=True)
     (OUT / "data.json").write_text(json.dumps(encrypt(payload, pw)), encoding="utf-8")
