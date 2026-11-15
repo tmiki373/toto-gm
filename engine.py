@@ -794,3 +794,41 @@ def build_ticket(slots, budget_units, alpha=0.0):
             break
         picks[best[0]].append(best[1])
     return [sorted(s) for s in picks]
+
+# =============================================================================
+# 公式「くじ結果」ページ（過去回の対象試合とスコア）  ※ v3.1 で追加
+# =============================================================================
+RESULT_URL = f"{BASE}/pi04/spin011/PGSPIN01101LnkHoldCntLotResultLsttoto.form"
+RES_HEAD_RE = re.compile(r"第\s*(\d+)\s*回\s*(toto|mini\s*toto-A組|mini\s*toto-B組|totoGOAL\d?)\s*くじ結果")
+RES3_RE = re.compile(r"(\d{2}/\d{2})\s+(\S+)\s+(\d{1,2})\s+(\S+)\s+(?:(\d+)\s*-\s*(\d+)\s+|-\s+)?(\S+)(?:\s+([012])(?=\s|$))?")
+RESG_RE = re.compile(r"(\d{2}/\d{2})\s+(\S+)\s+(\d{1,2})\s+(\S+)\s+(?:(\d+)\s+([0-3])\s+)?(\d{1,2})\s+(\S+)(?:\s+(\d+)\s+([0-3])(?=\s|$))?")
+
+
+def parse_round_result(html_or_text, today=None):
+    """公式『くじ結果』ページ → くじ種別ごとの対象試合とスコア（未確定は None）"""
+    today = today or now_jst().date()
+    text = html_text(html_or_text)
+    heads = list(RES_HEAD_RE.finditer(text))
+    rows = []
+    for i, h in enumerate(heads):
+        chunk = text[h.end(): heads[i + 1].start() if i + 1 < len(heads) else len(text)].split("ご注意")[0]
+        kind = re.sub(r"\s+", " ", h.group(2))
+        rnd = int(h.group(1))
+        if kind.startswith("totoGOAL"):
+            for k, m in enumerate(RESG_RE.finditer(chunk), 1):
+                rows.append({"round": rnd, "kind": "totoGOAL3", "no": k, "date": _match_date(m.group(1), today),
+                             "time": "", "stadium": m.group(2), "home": m.group(4), "away": m.group(8),
+                             "hg": int(m.group(5)) if m.group(5) else None,
+                             "ag": int(m.group(9)) if m.group(9) else None})
+        else:
+            for m in RES3_RE.finditer(chunk):
+                rows.append({"round": rnd, "kind": kind, "no": int(m.group(3)), "date": _match_date(m.group(1), today),
+                             "time": "", "stadium": m.group(2), "home": m.group(4), "away": m.group(7),
+                             "hg": int(m.group(5)) if m.group(5) else None,
+                             "ag": int(m.group(6)) if m.group(6) else None})
+    cols = ["round", "kind", "no", "date", "time", "stadium", "home", "away", "hg", "ag"]
+    return pd.DataFrame(rows, columns=cols).drop_duplicates(["round", "kind", "no"])
+
+
+def fetch_round_result(rnd):
+    return parse_round_result(http_get(RESULT_URL, {"holdCntId": rnd}))
