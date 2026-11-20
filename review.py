@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-予想の保存（アーカイブ）と振り返り   v3.1
+予想の保存（アーカイブ）と振り返り   v4
   - 毎回の予想を保存し、販売締切を過ぎたら確定（以後は上書きしない）
   - 直前の回は、公式「くじ結果」ページから対象試合とスコアを取得して照合
     （予想が保存されていない回は、試合前のデータだけで予想を再現）
   - 外れた試合に分析コメントを付け、外れ方の傾向から次の検討要素を提案
+  - 過去回の「投票率・試合前の予想・結果」を集め、投票率を混ぜる比率の学習に使う
 """
 import base64
 import json
@@ -21,7 +22,8 @@ import engine as E
 ITER = 250_000
 BASE3 = np.array([0.43, 0.27, 0.30])
 KEEP_ROUNDS = 40
-LOOKBACK = 6          # 直前の回を探す範囲（現在の回から何回さかのぼるか）
+LOOKBACK = 6           # 直前の回を探す範囲
+VOTE_HIST_ROUNDS = 12  # 投票率の学習用に集める過去の回数
 
 
 # ---------------------------------------------------------------- 暗号化
@@ -43,7 +45,7 @@ def decrypt(enc, password):
 def _jd(o):
     if isinstance(o, np.ndarray):
         return o.tolist()
-    if isinstance(o, (np.floating, np.integer)):
+    if isinstance(o, (np.floating, np.integer, np.bool_)):
         return o.item()
     if hasattr(o, "isoformat"):
         return o.isoformat()
@@ -89,6 +91,10 @@ def save_state(state, data_dir):
     if len(arch) > KEEP_ROUNDS * 4:
         for k in sorted(arch, key=lambda k: int(k.split("|")[0]))[: len(arch) - KEEP_ROUNDS * 4]:
             arch.pop(k)
+    vh = state.get("vote_hist", {})
+    if len(vh) > 40:
+        for k in sorted(vh, key=int)[: len(vh) - 40]:
+            vh.pop(k)
     (data_dir / "state.json").write_text(json.dumps(state, ensure_ascii=False, default=_jd), encoding="utf-8")
 
 
@@ -149,12 +155,17 @@ class ResultCache:
                 self.d[rnd] = E.fetch_round_result(rnd)
             except Exception as e:  # noqa
                 self.log(f"第{rnd}回のくじ結果を取得できず: {e}")
-                self.d[rnd] = pd.DataFrame()
+                self.d[rnd] = None
         return self.d[rnd]
 
 
+def _rows_of(c, kind, r):
+    if c is None or c.empty:
+        return pd.DataFrame()
+    return c[(c["kind"] == kind) & (c["round"] == r)].sort_values("no")
+
+
 def _official(g):
-    """{試合No: [ホーム得点, アウェイ得点] or None}"""
     out = {}
     for _, m in g.iterrows():
         ok = not (pd.isna(m["hg"]) or pd.isna(m["ag"]))
@@ -162,18 +173,22 @@ def _official(g):
     return out
 
 
+def _predictor_for(res, first, L, hp=None, w=None):
+    hist = res[res["date"] < first]
+    if len(hist) < 300:
+        raise RuntimeError("その回より前の試合データが不足")
+    return E.Predictor.fit(hist, first, w=L.get("w", 0.5) if w is None else w,
+                           stacker=E.Stacker.from_dict(L.get("stacker")), vote_b=L.get("vote_b", 0.0),
+                           hp=hp or L.get("hp"))
+
+
 def find_previous(state, cur, rc, res, log=print):
-    """
-    くじ種別ごとに『現在の回より前で、いちばん新しい回』を公式結果ページで特定し、
-      - 予想が保存済みなら公式スコアを付ける
-      - 保存されていなければ、その回の試合前のデータだけで予想を再現して保存
-    """
     arch = state.setdefault("archive", {})
     prev = {}
     for kind, rnd in cur.items():
         for r in range(rnd - 1, rnd - 1 - LOOKBACK, -1):
             c = rc.get(r)
-            g = c[(c["kind"] == kind) & (c["round"] == r)] if len(c) else c
+            g = _rows_of(c, kind, r)
             if g.empty:
                 continue
             key = f"{r}|{kind}"
@@ -193,21 +208,15 @@ def find_previous(state, cur, rc, res, log=print):
 
 def reconstruct(kind, r, c, g, res, state, log):
     first = pd.Timestamp(min(g["date"]))
-    hist = res[res["date"] < first]
-    if len(hist) < 300:
-        raise RuntimeError("その回より前の試合データが不足")
-    L = state.get("learning", {})
-    pred = E.Predictor.fit(hist, first, w=L.get("w", 0.5),
-                           stacker=E.Stacker.from_dict(L.get("stacker")), vote_b=L.get("vote_b", 0.0))
+    pred = _predictor_for(res, first, state.get("learning", {}))
     rows = []
-    for _, m in g.sort_values("no").iterrows():
+    for _, m in g.iterrows():
         d = pred.predict(m["home"], m["away"], m["date"])
         d.update({"no": int(m["no"]), "date": m["date"], "time": "", "home": m["home"], "away": m["away"]})
         rows.append(d)
-    # 投票率（mini は toto の同じ試合を流用）
     vk = "toto" if kind.startswith("mini") else kind
     try:
-        src = c[(c["kind"] == vk) & (c["round"] == r)].sort_values("no")
+        src = _rows_of(c, vk, r)
         n = len(src) * (2 if vk == "totoGOAL3" else 1)
         v = E.fetch_vote_rates(r, vk, n) if n else None
         if v and kind == "totoGOAL3":
@@ -227,12 +236,60 @@ def reconstruct(kind, r, c, g, res, state, log):
     return make_entry(kind, r, None, rows, E.now_jst(), reconstructed=True)
 
 
+def vote_history(state, cur_round, rc, res, hp, w, log=print):
+    """
+    過去 VOTE_HIST_ROUNDS 回の toto について『試合前データだけの予想・最終投票率・結果』を集める。
+    一度集めた回は保存して再利用（毎回の取得は新しく終わった回だけ）。
+    """
+    vh = state.setdefault("vote_hist", {})
+    L = state.get("learning", {})
+    added = 0
+    for r in range(cur_round - 1, cur_round - 1 - VOTE_HIST_ROUNDS, -1):
+        if str(r) in vh:
+            continue
+        c = rc.get(r)
+        if c is None:
+            continue
+        g = _rows_of(c, "toto", r)
+        if g.empty:
+            vh[str(r)] = []                 # toto のない回（totoGOAL3 だけの回など）
+            continue
+        if g["hg"].isna().any() or g["ag"].isna().any():
+            continue                        # 結果待ち → 次回また確認
+        try:
+            v = E.fetch_vote_rates(r, "toto", len(g))
+        except Exception as e:  # noqa
+            log(f"第{r}回の投票率を取得できず: {e}")
+            continue
+        if not v:
+            vh[str(r)] = []
+            continue
+        try:
+            pred = _predictor_for(res, pd.Timestamp(min(g["date"])), L, hp=hp, w=w)
+        except Exception as e:  # noqa
+            log(f"第{r}回の予想再現をスキップ: {e}")
+            vh[str(r)] = []
+            continue
+        rows = []
+        for (_, m), vv in zip(g.iterrows(), v):
+            d = pred.predict(m["home"], m["away"], m["date"])
+            if not d["known"]:
+                continue                    # 海外の試合などモデルが知らない試合は除外
+            hg, ag = int(m["hg"]), int(m["ag"])
+            rows.append({"home": m["home"], "away": m["away"], "date": str(m["date"]),
+                         "v": [round(float(x), 4) for x in vv], "p": [round(float(x), 5) for x in d["p"]],
+                         "a": 0 if hg > ag else 1 if hg == ag else 2})
+        vh[str(r)] = rows
+        added += 1
+    n = sum(len(x) for x in vh.values())
+    log(f"投票率の学習データ: {n}試合（今回追加 {added}回分）")
+    return added
+
+
 def _score(e, r, res):
-    off = (e.get("official") or {}).get(str(r["no"]))
-    if off:
-        return tuple(off)
-    if e.get("official") is not None and str(r["no"]) in e["official"]:
-        return None                       # 公式ページで未確定
+    off = e.get("official")
+    if off is not None and str(r["no"]) in off:
+        return tuple(off[str(r["no"])]) if off[str(r["no"])] else None
     d = pd.Timestamp(r["date"])
     g = res[(res["home"] == r["hs"]) & (res["away"] == r["as"]) & ((res["date"] - d).abs() <= pd.Timedelta(days=3))]
     if g.empty:
@@ -359,10 +416,10 @@ def review_entry(e, res):
     else:
         ticket = "判定待ち"
     s = {"round": e["round"], "kind": e["kind"], "reconstructed": e.get("reconstructed", False),
-         "n": n, "known": known, "hits": hits, "ticket": ticket,
+         "n": n, "known": known, "hits": int(hits), "ticket": ticket,
          "ticket_units": int(np.prod([len(t) for t in e["ticket"]])),
          "ll": float(np.mean(ll)) if ll else None, "ll_base": float(np.mean(ll_b)) if ll_b else None,
-         "miss_types": miss_types, "complete": known == n}
+         "miss_types": {k: int(v) for k, v in miss_types.items()}, "complete": known == n}
     s["summary"] = summary_text(s)
     return {"summary": s, "rows": rows}
 

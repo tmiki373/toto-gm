@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""取得 → 振り返り → 学習（検討要素の追加・検証）→ 予想 → 保存 をまとめて実行   v3.1"""
+"""取得 → 振り返り → 学習（設定の自動調整・検討要素・投票率）→ 予想 → 保存 をまとめて実行   v4"""
 import pickle
 import traceback
 from pathlib import Path
@@ -54,7 +54,7 @@ def refresh(force_results=False, password=None, log=print):
     res = E.clean_res(res, log=lg)
     lg(f"結果データ合計: {len(res)}試合（{res['date'].min():%Y/%m/%d}〜{res['date'].max():%Y/%m/%d}）")
 
-    # 3) 投票率
+    # 3) 投票率（次回）
     votes = {}
     for kind, g in card.groupby("kind"):
         if kind.startswith("mini"):
@@ -79,8 +79,9 @@ def refresh(force_results=False, password=None, log=print):
     if lag > 21:
         errors.append(f"試合結果が {last:%Y/%m/%d} で止まっています（{lag}日前）。")
 
-    # 4) 直前の回の振り返り（公式くじ結果ページで回とスコアを特定）
+    # 4) 直前の回の振り返り
     state = R.load_state(DATA, password, lg)
+    L0 = state.get("learning", {})
     cur = {k: int(g["round"].iloc[0]) for k, g in card.groupby("kind")}
     rc = R.ResultCache(lg)
     try:
@@ -88,7 +89,7 @@ def refresh(force_results=False, password=None, log=print):
     except Exception:
         lg("直前の回の特定で失敗:\n" + traceback.format_exc())
         prev_keys = {}
-    reviewed = set(state.get("learning", {}).get("reviewed", []))
+    reviewed = set(L0.get("reviewed", []))
     arch = state.get("archive", {})
     reviews, new_reviews = {}, []
     for kind, key in prev_keys.items():
@@ -108,11 +109,18 @@ def refresh(force_results=False, password=None, log=print):
         if s["complete"] and key not in reviewed:
             new_reviews.append(rv)
 
-    # 5) 学習（検討要素の追加・検証・採否）… 結果が全部そろった回だけを学習に使う
+    # 5) 学習
     lg("学習開始")
-    M = E.train(res)
+    M = E.train(res, hp=L0.get("hp"), log=lg)
+    lg(f"モデル設定: {LRN._hp_text(M['hp'])}{'（今回再調整）' if M['retuned'] else ''}")
+    if "toto" in cur:
+        try:
+            R.vote_history(state, cur["toto"], rc, res, M["hp"], M["w"], lg)
+        except Exception:
+            lg("投票率の学習データ収集で失敗（続行）:\n" + traceback.format_exc())
     L = LRN.update(state, M, new_reviews, log=lg)
-    lg(f"学習完了 / 採用中の検討要素: {[E.FEAT_INFO[a][0] for a in L['active']] or 'なし'}")
+    lg(f"学習完了 / 採用中の検討要素: {[E.FEAT_INFO[a][0] for a in L['active']] or 'なし'}"
+       f" / 投票率の比率 {L['vote_b']}")
 
     # 6) 次回の予想
     pred = E.Predictor(res, M["poisson"], M["elo"], M["w"], M["base"], M["stacker"], M["vote_b"])

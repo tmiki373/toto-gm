@@ -1,16 +1,19 @@
 # -*- coding: utf-8 -*-
 """
-toto 予想エンジン
-  - データ取得 : くじ対象試合・販売締切 / 投票率（スポーツくじ公式）、過去結果（Ｊリーグデータサイト）
-  - モデル     : ① Dixon-Coles ポアソン  ② Elo + 順序ロジット → アンサンブル
+toto 予想エンジン   v4
+  - データ取得 : くじ対象試合・販売締切 / 投票率 / くじ結果（スポーツくじ公式）、過去結果（Ｊリーグデータサイト）
+  - モデル     : ① Dixon-Coles ポアソン（J1/J2/J3 の階層補正・ルヴァン杯の重み付け）
+                 ② Elo + 順序ロジット（シーズン間の平均回帰・ルヴァン杯の重み付け）
+                 → 過去データの答え合わせで設定値を自動調整し、2つを最適な比率で混合
                  ③ 学習補正（Stacker）: 振り返りで採用された「検討要素」で確率を補正
-  - 検証       : ウォークフォワード（過去時点のデータだけで予想 → 答え合わせ）
+                 ④ 投票率ブレンド: 過去回の投票率と結果から混ぜる比率を学習
 """
 import math
 import re
 import time
 import unicodedata
 from datetime import datetime, date
+from itertools import product
 from zoneinfo import ZoneInfo
 
 import numpy as np
@@ -22,6 +25,7 @@ JST = ZoneInfo("Asia/Tokyo")
 BASE = "https://store.toto-dream.com/dcs/subos/screen"
 TOTO_INFO_URL = f"{BASE}/pi01/spin000/PGSPIN00001DisptotoLotInfo.form"
 VOTE_URL = f"{BASE}/pi09/spin003/PGSPIN00301InitVoteRate.form"
+RESULT_URL = f"{BASE}/pi04/spin011/PGSPIN01101LnkHoldCntLotResultLsttoto.form"
 JDATA_FORM_URL = "https://data.j-league.or.jp/SFMS01/"
 JDATA_URL = "https://data.j-league.or.jp/SFMS01/search"
 HEADERS = {"User-Agent": "Mozilla/5.0 (personal toto analysis)"}
@@ -30,12 +34,23 @@ KINDS = ["toto", "mini toto-A組", "mini toto-B組", "totoGOAL3"]
 COMMODITY = {"toto": "01", "totoGOAL3": "02", "mini toto-A組": "01", "mini toto-B組": "01"}
 SEASONS = ["2025", "2026特別", "2026/27"]
 CACHE_VER = "v2"
-HALF_LIFE_DAYS = 180
 MAX_GOALS = 10
 OUT3 = ["1", "0", "2"]
 OUT4 = ["0", "1", "2", "3"]
 KEEP_COMP = "J1|J2|J3|百年構想|ルヴァン|昇格|入れ替え|参入"
 DROP_COMP = "U-21|ユース|エリート|育成|サテライト|オールスター|ドリーム|ワールドチャレンジ|国際"
+CUP_RE = "ルヴァン"
+TIER = {"J1": 0, "J2": 1, "J3": 2}
+
+# ---- モデル設定（自動調整の候補と初期値）
+HP_VER = 1
+HP_RETUNE = 30                       # 結果がこの試合数ふえたら設定を再調整
+POI_DEFAULT = {"half_life": 180, "l2": 0.05, "cup_w": 1.0, "tier": False}
+ELO_DEFAULT = {"k": 24, "hfa": 55, "regress": 0.0, "cup_w": 1.0}
+POI_GRID = [dict(half_life=h, l2=l, cup_w=c, tier=t)
+            for h, l, c, t in product([90, 180, 365], [0.05, 0.15], [0.5, 1.0], [True, False])]
+ELO_GRID = [dict(k=k, hfa=a, regress=r, cup_w=c)
+            for k, a, r, c in product([16, 24, 32], [40, 55, 75], [0.0, 0.33], [0.5, 1.0])]
 
 TEAM_ALIAS = {
     "北海道コンサドーレ札幌": "札幌", "ヴァンラーレ八戸": "八戸", "いわてグルージャ盛岡": "岩手",
@@ -164,6 +179,42 @@ def fetch_vote_rates(round_no, kind, n_slots):
     n_out = 4 if kind == "totoGOAL3" else 3
     html = http_get(VOTE_URL, {"holdCntId": round_no, "commodityId": COMMODITY[kind]})
     return parse_vote_rates(html, n_slots, n_out)
+
+
+# ---------------------------------------------------------------- 公式「くじ結果」ページ
+RES_HEAD_RE = re.compile(r"第\s*(\d+)\s*回\s*(toto|mini\s*toto-A組|mini\s*toto-B組|totoGOAL\d?)\s*くじ結果")
+RES3_RE = re.compile(r"(\d{2}/\d{2})\s+(\S+)\s+(\d{1,2})\s+(\S+)\s+(?:(\d+)\s*-\s*(\d+)\s+|-\s+)?(\S+)(?:\s+([012])(?=\s|$))?")
+RESG_RE = re.compile(r"(\d{2}/\d{2})\s+(\S+)\s+(\d{1,2})\s+(\S+)\s+(?:(\d+)\s+([0-3])\s+)?(\d{1,2})\s+(\S+)(?:\s+(\d+)\s+([0-3])(?=\s|$))?")
+
+
+def parse_round_result(html_or_text, today=None):
+    """公式『くじ結果』ページ → くじ種別ごとの対象試合とスコア（未確定は None）"""
+    today = today or now_jst().date()
+    text = html_text(html_or_text)
+    heads = list(RES_HEAD_RE.finditer(text))
+    rows = []
+    for i, h in enumerate(heads):
+        chunk = text[h.end(): heads[i + 1].start() if i + 1 < len(heads) else len(text)].split("ご注意")[0]
+        kind = re.sub(r"\s+", " ", h.group(2))
+        rnd = int(h.group(1))
+        if kind.startswith("totoGOAL"):
+            for k, m in enumerate(RESG_RE.finditer(chunk), 1):
+                rows.append({"round": rnd, "kind": "totoGOAL3", "no": k, "date": _match_date(m.group(1), today),
+                             "time": "", "stadium": m.group(2), "home": m.group(4), "away": m.group(8),
+                             "hg": int(m.group(5)) if m.group(5) else None,
+                             "ag": int(m.group(9)) if m.group(9) else None})
+        else:
+            for m in RES3_RE.finditer(chunk):
+                rows.append({"round": rnd, "kind": kind, "no": int(m.group(3)), "date": _match_date(m.group(1), today),
+                             "time": "", "stadium": m.group(2), "home": m.group(4), "away": m.group(7),
+                             "hg": int(m.group(5)) if m.group(5) else None,
+                             "ag": int(m.group(6)) if m.group(6) else None})
+    cols = ["round", "kind", "no", "date", "time", "stadium", "home", "away", "hg", "ag"]
+    return pd.DataFrame(rows, columns=cols).drop_duplicates(["round", "kind", "no"])
+
+
+def fetch_round_result(rnd):
+    return parse_round_result(http_get(RESULT_URL, {"holdCntId": rnd}))
 
 
 # ---------------------------------------------------------------- Ｊリーグデータサイト
@@ -302,16 +353,24 @@ def clean_res(res: pd.DataFrame, log=print) -> pd.DataFrame:
 
 
 def team_leagues(res):
+    """各チームの直近のリーグ戦カテゴリ（J1/J2/J3）"""
     lg = res[~res["comp"].str.contains("ルヴァン|昇格|入れ替え|参入")].copy()
     lg["lv"] = lg["comp"].str.extract(r"J([123])")[0]
+    lg.loc[lg["lv"].isna() & lg["comp"].str.contains("百年構想"), "lv"] = "1"
     lg = lg.dropna(subset=["lv"])
+    if lg.empty:
+        return {}
     long = pd.concat([lg[["date", "home", "lv"]].rename(columns={"home": "team"}),
                       lg[["date", "away", "lv"]].rename(columns={"away": "team"})])
     return long.sort_values("date").groupby("team")["lv"].last().map(lambda x: f"J{x}").to_dict()
 
 
+def _cup_mask(df):
+    return df["comp"].str.contains(CUP_RE, regex=True).to_numpy() if "comp" in df else np.zeros(len(df), bool)
+
+
 # =============================================================================
-# モデル① Dixon-Coles ポアソン
+# モデル① Dixon-Coles ポアソン（J1/J2/J3 の階層補正つき）
 # =============================================================================
 def _tau(x, y, lh, la, rho):
     t = np.ones_like(lh, dtype=float)
@@ -323,32 +382,49 @@ def _tau(x, y, lh, la, rho):
 
 
 class PoissonModel:
-    def __init__(self, half_life=HALF_LIFE_DAYS, l2=0.05):
-        self.half_life, self.l2 = half_life, l2
+    """
+    攻撃力 = カテゴリ平均 + チーム個別 として推定。
+    個別分だけを縮小するので、試合数の少ないチームは『そのカテゴリの平均』に寄る
+    （旧版は全カテゴリ共通の平均に寄せていたため、J3勢を強く、J1勢を弱く見積もりがちだった）。
+    """
 
-    def fit(self, df, ref_date):
+    def __init__(self, half_life=180, l2=0.05, cup_w=1.0, tier=True):
+        self.half_life, self.l2, self.cup_w, self.use_tier = half_life, l2, cup_w, tier
+
+    def fit(self, df, ref_date, tiers=None):
         teams = sorted(set(df["home"]) | set(df["away"]))
         self.teams = {t: i for i, t in enumerate(teams)}
         n = len(teams)
+        tiers = (tiers or {}) if self.use_tier else {}
+        tier = np.array([TIER.get(tiers.get(t), 1) for t in teams])
         h = df["home"].map(self.teams).to_numpy()
         a = df["away"].map(self.teams).to_numpy()
         hg, ag = df["hg"].to_numpy(float), df["ag"].to_numpy(float)
         w = 0.5 ** ((pd.Timestamp(ref_date) - df["date"]).dt.days.clip(lower=0).to_numpy() / self.half_life)
-        l2 = self.l2
+        w = w * np.where(_cup_mask(df), self.cup_w, 1.0)
+        l2, eps = self.l2, 1e-3
 
         def nll(p):
-            att, de, home, mu = p[:n], p[n:2 * n], p[2 * n], p[2 * n + 1]
-            lh = np.exp(mu + home + att[h] + de[a]); la = np.exp(mu + att[a] + de[h])
-            f = np.sum(w * (lh - hg * np.log(lh) + la - ag * np.log(la))) + l2 * (att @ att + de @ de)
+            att, de = p[:n], p[n:2 * n]
+            ta, td = p[2 * n:2 * n + 3], p[2 * n + 3:2 * n + 6]
+            home, mu = p[2 * n + 6], p[2 * n + 7]
+            A, D = att + ta[tier], de + td[tier]
+            lh = np.exp(mu + home + A[h] + D[a]); la = np.exp(mu + A[a] + D[h])
+            f = np.sum(w * (lh - hg * np.log(lh) + la - ag * np.log(la)))
+            f += l2 * (att @ att + de @ de) + eps * (ta @ ta + td @ td)
             rh, ra = w * (lh - hg), w * (la - ag)
-            g = np.concatenate([np.bincount(h, rh, n) + np.bincount(a, ra, n) + 2 * l2 * att,
-                                np.bincount(a, rh, n) + np.bincount(h, ra, n) + 2 * l2 * de,
+            gA = np.bincount(h, rh, n) + np.bincount(a, ra, n)
+            gD = np.bincount(a, rh, n) + np.bincount(h, ra, n)
+            g = np.concatenate([gA + 2 * l2 * att, gD + 2 * l2 * de,
+                                np.bincount(tier, gA, 3) + 2 * eps * ta, np.bincount(tier, gD, 3) + 2 * eps * td,
                                 [rh.sum()], [rh.sum() + ra.sum()]])
             return f, g
 
-        x0 = np.zeros(2 * n + 2); x0[-2:] = 0.2
+        x0 = np.zeros(2 * n + 8); x0[-2:] = 0.2
         p = minimize(nll, x0, jac=True, method="L-BFGS-B").x
-        self.att, self.de, self.home_adv, self.mu = p[:n], p[n:2 * n], p[2 * n], p[2 * n + 1]
+        ta, td = p[2 * n:2 * n + 3], p[2 * n + 3:2 * n + 6]
+        self.att, self.de = p[:n] + ta[tier], p[n:2 * n] + td[tier]
+        self.home_adv, self.mu = p[2 * n + 6], p[2 * n + 7]
         lh = np.exp(self.mu + self.home_adv + self.att[h] + self.de[a])
         la = np.exp(self.mu + self.att[a] + self.de[h])
         best = (-np.inf, 0.0)
@@ -384,31 +460,44 @@ class PoissonModel:
     def ratings(self):
         inv = {i: t for t, i in self.teams.items()}
         return pd.DataFrame({"チーム": [inv[i] for i in range(len(inv))],
-                             "攻撃力": np.exp(self.att), "守備力(失点倍率)": np.exp(self.de)})
+                             "攻撃力": np.exp(self.att - self.att.mean()),
+                             "守備力(失点倍率)": np.exp(self.de - self.de.mean())})
 
 
 # =============================================================================
-# モデル② Elo + 順序ロジット
+# モデル② Elo + 順序ロジット（シーズン間の平均回帰つき）
 # =============================================================================
 def _sig(x):
     return 1 / (1 + np.exp(-x))
 
 
 class EloModel:
-    def __init__(self, k=24, hfa=55):
-        self.k, self.hfa = k, hfa
+    def __init__(self, k=24, hfa=55, regress=0.0, cup_w=1.0):
+        self.k, self.hfa, self.regress, self.cup_w = k, hfa, regress, cup_w
 
     def run(self, df):
-        self.r = {}
+        """時系列順に更新し、各試合の『試合前』レート差を返す。40日以上の空白＝シーズンの切れ目で平均に寄せる"""
+        self.r, self.init = {}, {}
         diffs = np.empty(len(df))
-        for idx, (comp, h, a, hg, ag) in enumerate(df[["comp", "home", "away", "hg", "ag"]].itertuples(index=False)):
-            init = 1600 if "J1" in comp else 1400 if "J3" in comp else 1500
-            rh, ra = self.r.setdefault(h, init), self.r.setdefault(a, init)
-            d = rh + self.hfa - ra
-            diffs[idx] = d
-            exp = 1 / (1 + 10 ** (-d / 400))
+        last = None
+        cup = _cup_mask(df)
+        for idx, (comp, d, h, a, hg, ag) in enumerate(
+                df[["comp", "date", "home", "away", "hg", "ag"]].itertuples(index=False)):
+            if last is not None and self.regress and (d - last).days > 40:
+                for t in self.r:
+                    self.r[t] -= self.regress * (self.r[t] - self.init[t])
+            last = d
+            init = 1600 if "J1" in comp or "百年構想" in comp else 1400 if "J3" in comp else 1500
+            for t in (h, a):
+                if t not in self.r:
+                    self.r[t] = self.init[t] = init
+            rh, ra = self.r[h], self.r[a]
+            dd = rh + self.hfa - ra
+            diffs[idx] = dd
+            exp = 1 / (1 + 10 ** (-dd / 400))
             res = 1.0 if hg > ag else 0.5 if hg == ag else 0.0
-            delta = self.k * (math.log(abs(hg - ag) + 1) + 1) * (res - exp)
+            k = self.k * (self.cup_w if cup[idx] else 1.0)
+            delta = k * (math.log(abs(hg - ag) + 1) + 1) * (res - exp)
             self.r[h], self.r[a] = rh + delta, ra - delta
         return diffs
 
@@ -452,10 +541,9 @@ def metrics(P, y):
 
 
 # =============================================================================
-# 検討要素（試合前時点の特徴量）
+# 検討要素（試合前時点の特徴量）と学習補正
 # =============================================================================
 def match_features(res):
-    """各試合の『試合前』時点の 休養日数・直近5試合の勝点 を一括計算"""
     r = res.reset_index(drop=True)
     ph = np.where(r["hg"] > r["ag"], 3, np.where(r["hg"] == r["ag"], 1, 0))
     pa = np.where(r["ag"] > r["hg"], 3, np.where(r["hg"] == r["ag"], 1, 0))
@@ -480,7 +568,7 @@ FEAT_INFO = {
     "rest_diff": ("休養日差", "前の試合からの間隔の差（連戦による疲労）"),
     "form_diff": ("直近の勢い", "直近5試合の勝点の差"),
     "model_gap": ("モデル間の不一致", "2つのモデルの見立てが割れる試合を引き分け寄りに"),
-    "vote": ("投票率（世間の予想）", "一般の投票率を予想に混ぜる（過去回の答え合わせから比率を学習）"),
+    "vote": ("投票率（世間の予想）", "一般の投票率を予想に混ぜる（過去回の投票率と結果から比率を学習）"),
 }
 DRAW_FEATS = ["closeness", "goal_env", "model_gap"]
 SIDE_FEATS = ["rest_diff", "form_diff"]
@@ -499,8 +587,6 @@ def feat_values(P, F):
 
 
 class Stacker:
-    """アンサンブル確率に、採用された検討要素で補正をかける多項ロジット"""
-
     def __init__(self, active=(), theta=None):
         self.active = [a for a in STACK_FEATS if a in active]
         self.theta = None if theta is None else np.asarray(theta, float)
@@ -519,8 +605,7 @@ class Stacker:
         return np.array([1.0 if n == "temperature" else 0.0 for n in self.names()])
 
     def _logits(self, th, P, X):
-        names = self.names()
-        p = dict(zip(names, th))
+        p = dict(zip(self.names(), th))
         L = p.get("temperature", 1.0) * np.log(np.clip(P, 1e-9, 1))
         L = L.copy()
         L[:, 1] += p.get("draw_bias", 0.0)
@@ -532,8 +617,8 @@ class Stacker:
                 L[:, 0] += p[f] * X[f]
                 L[:, 2] -= p[f] * X[f]
         L -= L.max(1, keepdims=True)
-        E = np.exp(L)
-        return E / E.sum(1, keepdims=True)
+        Ex = np.exp(L)
+        return Ex / Ex.sum(1, keepdims=True)
 
     def fit(self, P, F, y, reg=0.01):
         if not self.active:
@@ -573,7 +658,6 @@ def subF(F, idx):
 
 
 def cv_score(active, P, F, y, k=5):
-    """時系列の拡大ウィンドウCV：過去の区間で補正を学習 → 次の区間で答え合わせ"""
     idx = np.arange(len(y))
     chunks = np.array_split(idx, k)
     Q, te_all = [], []
@@ -587,64 +671,93 @@ def cv_score(active, P, F, y, k=5):
 
 
 # =============================================================================
-# 学習（ウォークフォワード検証つき）
+# 学習：設定値の自動調整（ウォークフォワード検証）
 # =============================================================================
-def walk_forward(res, frac=0.4, step=28):
-    """直近 frac の期間を step 日ごとに区切り、各区間をそれ以前のデータだけで予想する"""
-    n = len(res)
-    s_idx = int(n * (1 - frac))
-    y = outcome_code(res)
-    elo = EloModel(); diffs = elo.run(res)
+def _wf_split(res, frac=0.4):
+    s = int(len(res) * (1 - frac))
+    t0 = res["date"].iloc[s]
+    return int((res["date"] < t0).sum()), t0
+
+
+def elo_oos(res, s_idx, y, cfg):
+    elo = EloModel(**cfg)
+    diffs = elo.run(res)
     t0 = res["date"].iloc[s_idx]
-    pre = res["date"] < t0
-    s_idx = int(pre.sum())
-    wtr = 0.5 ** ((t0 - res["date"][pre]).dt.days.to_numpy() / 365)
-    elo.fit_logit(diffs[:s_idx], y[:s_idx], wtr)
-    P_elo = elo.probs_from_diff(diffs[s_idx:])
-    base = np.bincount(y[:s_idx], minlength=3) / max(s_idx, 1)
-    m = n - s_idx
-    P_poi = np.tile(base, (m, 1)); LAM = np.full((m, 2), np.nan)
-    t, end = t0, res["date"].max()
+    w = 0.5 ** ((t0 - res["date"].iloc[:s_idx]).dt.days.to_numpy() / 365)
+    elo.fit_logit(diffs[:s_idx], y[:s_idx], w)
+    return elo.probs_from_diff(diffs[s_idx:])
+
+
+def poisson_oos(res, s_idx, t0, configs, base, step=42):
+    """各設定について、step日ごとに『それ以前のデータだけ』で学習 → 次の区間を予想"""
+    chunks, t, end = [], t0, res["date"].max()
     while t <= end:
         te = np.where((res["date"] >= t) & (res["date"] < t + pd.Timedelta(days=step)))[0]
         if len(te):
             tr = res[res["date"] < t]
-            pm = PoissonModel().fit(tr, t)
+            chunks.append((t, tr, team_leagues(tr), te))
+        t += pd.Timedelta(days=step)
+    m = len(res) - s_idx
+    out = []
+    for cfg in configs:
+        P = np.tile(base, (m, 1)); LAM = np.full((m, 2), np.nan)
+        for t, tr, tiers, te in chunks:
+            pm = PoissonModel(**cfg).fit(tr, t, tiers)
             for i in te:
                 h, a = res.at[i, "home"], res.at[i, "away"]
                 if pm.known(h) and pm.known(a):
-                    P_poi[i - s_idx], lh, la = pm.probs(h, a)
+                    P[i - s_idx], lh, la = pm.probs(h, a)
                     LAM[i - s_idx] = (lh, la)
-        t += pd.Timedelta(days=step)
+        out.append((cfg, P, LAM))
+    return out
+
+
+def train(res: pd.DataFrame, today=None, hp=None, log=print):
+    """
+    hp : 前回までに決めた設定値。結果が HP_RETUNE 試合以上ふえていたら候補の中から選び直す。
+    """
+    today = pd.Timestamp(today or now_jst().date())
+    res = res.sort_values("date").reset_index(drop=True)
+    y = outcome_code(res)
+    s_idx, t0 = _wf_split(res)
+    yt = y[s_idx:]
+    base = np.bincount(y[:s_idx], minlength=3) / max(s_idx, 1)
+    retune = (not hp or hp.get("ver") != HP_VER or len(res) - hp.get("n", 0) >= HP_RETUNE)
+
+    report = {}
+    if retune:
+        log(f"モデル設定を調整中（Elo {len(ELO_GRID)}通り・ポアソン {len(POI_GRID)}通り）")
+        sc = [(metrics(elo_oos(res, s_idx, y, c), yt)["ll"], i) for i, c in enumerate(ELO_GRID)]
+        ecfg = ELO_GRID[min(sc)[1]]
+        report["elo"] = {"best": min(sc)[0], "default": metrics(elo_oos(res, s_idx, y, ELO_DEFAULT), yt)["ll"]}
+        cands = poisson_oos(res, s_idx, t0, POI_GRID, base)
+        lls = [metrics(P, yt)["ll"] for _, P, _ in cands]
+        pcfg, P_poi, LAM = cands[int(np.argmin(lls))]
+        dflt = [l for (c, _, _), l in zip(cands, lls) if c == POI_DEFAULT]
+        report["poi"] = {"best": min(lls), "default": dflt[0] if dflt else None}
+    else:
+        ecfg, pcfg = hp["elo"], hp["poi"]
+        _, P_poi, LAM = poisson_oos(res, s_idx, t0, [pcfg], base)[0]
+    P_elo = elo_oos(res, s_idx, y, ecfg)
+
+    best_w, best_ll = 0.5, np.inf
+    for wgt in np.linspace(0, 1, 11):
+        ll = metrics(wgt * P_poi + (1 - wgt) * P_elo, yt)["ll"]
+        if ll < best_ll:
+            best_w, best_ll = wgt, ll
+
     mf = match_features(res).iloc[s_idx:].reset_index(drop=True)
     F = {"rest_h": mf["rest_h"].values, "rest_a": mf["rest_a"].values,
          "form_h": mf["form_h"].values, "form_a": mf["form_a"].values,
-         "lam_h": LAM[:, 0], "lam_a": LAM[:, 1],
-         "gap": 0.5 * np.abs(P_poi - P_elo).sum(1)}
-    return {"P_poi": P_poi, "P_elo": P_elo, "y": y[s_idx:], "F": F, "base": base,
-            "dates": res["date"].iloc[s_idx:].reset_index(drop=True)}
+         "lam_h": LAM[:, 0], "lam_a": LAM[:, 1], "gap": 0.5 * np.abs(P_poi - P_elo).sum(1)}
+    oos = {"P_poi": P_poi, "P_elo": P_elo, "P_base": best_w * P_poi + (1 - best_w) * P_elo,
+           "y": yt, "F": F, "base": base, "dates": res["date"].iloc[s_idx:].reset_index(drop=True)}
 
-
-def train(res: pd.DataFrame, today=None):
-    today = pd.Timestamp(today or now_jst().date())
-    res = res.sort_values("date").reset_index(drop=True)
-    wf = walk_forward(res)
-    y = wf["y"]
-    best_w, best_ll = 0.5, np.inf
-    for wgt in np.linspace(0, 1, 11):
-        ll = metrics(wgt * wf["P_poi"] + (1 - wgt) * wf["P_elo"], y)["ll"]
-        if ll < best_ll:
-            best_w, best_ll = wgt, ll
-    wf["P_base"] = best_w * wf["P_poi"] + (1 - best_w) * wf["P_elo"]
-
-    yall = outcome_code(res)
-    elo_all = EloModel(); d_all = elo_all.run(res)
-    w_all = 0.5 ** ((res["date"].max() - res["date"]).dt.days.to_numpy() / 365)
-    elo_all.fit_logit(d_all, yall, w_all)
-    poi_all = PoissonModel().fit(res, today)
-    return {"poisson": poi_all, "elo": elo_all, "w": best_w, "oos": wf,
-            "test_period": (wf["dates"].min(), wf["dates"].max(), len(y)),
-            "base": np.bincount(yall, minlength=3) / len(yall)}
+    pred = Predictor.fit(res, today, w=best_w, hp={"elo": ecfg, "poi": pcfg})
+    new_hp = {"ver": HP_VER, "n": len(res) if retune else hp["n"], "elo": ecfg, "poi": pcfg}
+    return {"poisson": pred.poi, "elo": pred.elo, "w": best_w, "oos": oos, "hp": new_hp, "retuned": retune,
+            "hp_report": report, "test_period": (oos["dates"].min(), oos["dates"].max(), len(yt)),
+            "base": np.bincount(y, minlength=3) / len(y)}
 
 
 # =============================================================================
@@ -681,12 +794,14 @@ class Predictor:
         self.vote_b = vote_b
 
     @classmethod
-    def fit(cls, res, today, w=0.5, stacker=None, vote_b=0.0):
+    def fit(cls, res, today, w=0.5, stacker=None, vote_b=0.0, hp=None):
+        hp = hp or {}
         res = res.sort_values("date").reset_index(drop=True)
         y = outcome_code(res)
-        elo = EloModel(); d = elo.run(res)
+        elo = EloModel(**(hp.get("elo") or ELO_DEFAULT))
+        d = elo.run(res)
         elo.fit_logit(d, y, 0.5 ** ((res["date"].max() - res["date"]).dt.days.to_numpy() / 365))
-        poi = PoissonModel().fit(res, today)
+        poi = PoissonModel(**(hp.get("poi") or POI_DEFAULT)).fit(res, today, team_leagues(res))
         return cls(res, poi, elo, w, np.bincount(y, minlength=3) / len(y), stacker, vote_b)
 
     def predict(self, home, away, mdate):
@@ -712,7 +827,7 @@ class Predictor:
              "gap": [0.5 * np.abs(p_poi - p_elo).sum() if ok_p and ok_e else 0.0]}
         p = self.stacker.apply(pb[None, :], F)[0] if (ok_p or ok_e) else pb
         out = {"hs": h, "as": a, "p": p, "p_base": pb, "p_poi": p_poi, "p_elo": p_elo, "lam": lam, "note": note,
-               "scores": poi.top_scores(h, a) if ok_p else [],
+               "known": ok_p and ok_e, "scores": poi.top_scores(h, a) if ok_p else [],
                "elo_h": elo.r.get(h), "elo_a": elo.r.get(a),
                "form_h": fh, "form_a": fa, "rest_h": rh, "rest_a": ra,
                "h2h": head_to_head(self.res, h, a, before=md)}
@@ -756,7 +871,7 @@ def analyze_card(card, pred: Predictor, votes):
 
 
 # =============================================================================
-# 買い目（サイト側JSと同じロジック。アーカイブ用に既定予算で作成）
+# 買い目（サイト側JSと同じロジック。振り返り用に既定予算で作成）
 # =============================================================================
 def slots_of(kind, rows):
     if kind == "totoGOAL3":
@@ -794,41 +909,3 @@ def build_ticket(slots, budget_units, alpha=0.0):
             break
         picks[best[0]].append(best[1])
     return [sorted(s) for s in picks]
-
-# =============================================================================
-# 公式「くじ結果」ページ（過去回の対象試合とスコア）  ※ v3.1 で追加
-# =============================================================================
-RESULT_URL = f"{BASE}/pi04/spin011/PGSPIN01101LnkHoldCntLotResultLsttoto.form"
-RES_HEAD_RE = re.compile(r"第\s*(\d+)\s*回\s*(toto|mini\s*toto-A組|mini\s*toto-B組|totoGOAL\d?)\s*くじ結果")
-RES3_RE = re.compile(r"(\d{2}/\d{2})\s+(\S+)\s+(\d{1,2})\s+(\S+)\s+(?:(\d+)\s*-\s*(\d+)\s+|-\s+)?(\S+)(?:\s+([012])(?=\s|$))?")
-RESG_RE = re.compile(r"(\d{2}/\d{2})\s+(\S+)\s+(\d{1,2})\s+(\S+)\s+(?:(\d+)\s+([0-3])\s+)?(\d{1,2})\s+(\S+)(?:\s+(\d+)\s+([0-3])(?=\s|$))?")
-
-
-def parse_round_result(html_or_text, today=None):
-    """公式『くじ結果』ページ → くじ種別ごとの対象試合とスコア（未確定は None）"""
-    today = today or now_jst().date()
-    text = html_text(html_or_text)
-    heads = list(RES_HEAD_RE.finditer(text))
-    rows = []
-    for i, h in enumerate(heads):
-        chunk = text[h.end(): heads[i + 1].start() if i + 1 < len(heads) else len(text)].split("ご注意")[0]
-        kind = re.sub(r"\s+", " ", h.group(2))
-        rnd = int(h.group(1))
-        if kind.startswith("totoGOAL"):
-            for k, m in enumerate(RESG_RE.finditer(chunk), 1):
-                rows.append({"round": rnd, "kind": "totoGOAL3", "no": k, "date": _match_date(m.group(1), today),
-                             "time": "", "stadium": m.group(2), "home": m.group(4), "away": m.group(8),
-                             "hg": int(m.group(5)) if m.group(5) else None,
-                             "ag": int(m.group(9)) if m.group(9) else None})
-        else:
-            for m in RES3_RE.finditer(chunk):
-                rows.append({"round": rnd, "kind": kind, "no": int(m.group(3)), "date": _match_date(m.group(1), today),
-                             "time": "", "stadium": m.group(2), "home": m.group(4), "away": m.group(7),
-                             "hg": int(m.group(5)) if m.group(5) else None,
-                             "ag": int(m.group(6)) if m.group(6) else None})
-    cols = ["round", "kind", "no", "date", "time", "stadium", "home", "away", "hg", "ag"]
-    return pd.DataFrame(rows, columns=cols).drop_duplicates(["round", "kind", "no"])
-
-
-def fetch_round_result(rnd):
-    return parse_round_result(http_get(RESULT_URL, {"holdCntId": rnd}))

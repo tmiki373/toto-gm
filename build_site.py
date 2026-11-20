@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-GitHub Actions 上で実行：取得 → 振り返り → 学習 → 予想 → 暗号化した静的サイトを public/ に出力
+GitHub Actions 上で実行：取得 → 振り返り → 学習 → 予想 → 暗号化した静的サイトを public/ に出力   v4
   必要な環境変数: SITE_PASSWORD
 """
 import json
@@ -32,6 +32,23 @@ def f(x, nd=4):
 def form(fm):
     fm = fm or {}
     return {"marks": fm.get("marks", ""), "gf": int(fm.get("gf", 0)), "ga": int(fm.get("ga", 0)), "pts": int(fm.get("pts", 0))}
+
+
+def _plain(o):
+    """numpy 型を JSON にできる形へ"""
+    if isinstance(o, dict):
+        return {k: _plain(v) for k, v in o.items()}
+    if isinstance(o, (list, tuple)):
+        return [_plain(v) for v in o]
+    if isinstance(o, np.ndarray):
+        return [_plain(v) for v in o.tolist()]
+    if isinstance(o, (np.floating,)):
+        return float(o)
+    if isinstance(o, (np.integer,)):
+        return int(o)
+    if isinstance(o, np.bool_):
+        return bool(o)
+    return o
 
 
 def to_payload(snap):
@@ -83,7 +100,7 @@ def to_payload(snap):
         rv = snap.get("reviews", {}).get(kind)
         if rv:
             reviews.append({"kind": kind, "summary": rv["summary"],
-                            "rows": [{k: (f(v) if isinstance(v, (list, np.ndarray)) and k in ("p", "v") else v)
+                            "rows": [{k: (f(v) if k in ("p", "v") and v is not None else v)
                                       for k, v in r.items() if k != "feat"} for r in rv["rows"]]})
 
     feats = []
@@ -92,24 +109,48 @@ def to_payload(snap):
         feats.append({"key": k, "name": name, "desc": desc, "status": st, "gain": L["scores"].get(k),
                       "since": L["adopted_at"].get(k)})
     learning = {"features": feats, "history": L["history"][-40:][::-1], "track": L["track"][-30:],
-                "vote": {"b": L["vote_b"], "n": L["vote_n"], "need": 30},
-                "params": {k: round(v, 3) for k, v in M["stacker"].params().items()}}
+                "vote": {"b": L["vote_b"], "n": L["vote_n"], "need": 40},
+                "params": {k: round(v, 3) for k, v in M["stacker"].params().items()},
+                "hp": L.get("hp")}
 
     s, e, n = M["test_period"]
     last = res["date"].max()
     by_month = res.assign(y=res["date"].dt.to_period("M").astype(str)).groupby("y").size()
-    return {"updated": snap["updated"].isoformat(), "errors": snap["errors"], "logs": snap["logs"],
-            "kinds": kinds, "reviews": reviews, "learning": learning,
-            "backtest": [{k: (f(v) if k != "name" else v) for k, v in b.items()} for b in M["backtest"]],
-            "calib": [{**c, "pred": f(c["pred"]), "act": f(c["act"])} for c in M["calib"]], "ratings": ratings,
-            "test": f"{s:%Y/%m/%d}〜{e:%Y/%m/%d}の{n}試合",
-            "n_res": len(res), "res_from": f"{res['date'].min():%Y/%m/%d}", "res_to": f"{last:%Y/%m/%d}",
-            "lag": (E.now_jst().date() - last.date()).days,
-            "monthly": [[k, int(v)] for k, v in by_month.tail(18).items()],
-            "home_adv": f(math.exp(M["poisson"].home_adv), 2), "w_poi": f(M["w"], 2)}
+    return _plain({"updated": snap["updated"].isoformat(), "errors": snap["errors"], "logs": snap["logs"],
+                   "kinds": kinds, "reviews": reviews, "learning": learning,
+                   "backtest": [{k: (f(v) if k != "name" else v) for k, v in b.items()} for b in M["backtest"]],
+                   "calib": [{**c, "pred": f(c["pred"]), "act": f(c["act"])} for c in M["calib"]], "ratings": ratings,
+                   "test": f"{s:%Y/%m/%d}〜{e:%Y/%m/%d}の{n}試合",
+                   "n_res": len(res), "res_from": f"{res['date'].min():%Y/%m/%d}", "res_to": f"{last:%Y/%m/%d}",
+                   "lag": (E.now_jst().date() - last.date()).days,
+                   "monthly": [[k, int(v)] for k, v in by_month.tail(18).items()],
+                   "home_adv": f(math.exp(M["poisson"].home_adv), 2), "w_poi": f(M["w"], 2)})
+
+
+def check_files():
+    """アップロード漏れ・古いファイルの混在を最初に検出する"""
+    probs = []
+    for fn in ["review.py", "learning.py", "web/index.html"]:
+        if not (ROOT / fn).exists():
+            probs.append(f"{fn} がありません（新規ファイルのアップロード漏れ）")
+    if getattr(U, "SNAP_VER", 0) != 3:
+        probs.append("updater.py が古い版のままです（上書きされていません）")
+    if not hasattr(E, "HP_VER"):
+        probs.append("engine.py が古い版のままです（上書きされていません）")
+    if not hasattr(R, "vote_history"):
+        probs.append("review.py が古い版のままです（上書きされていません）")
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8") if (ROOT / "web" / "index.html").exists() else ""
+    if html and "reviewView" not in html:
+        probs.append("web/index.html が古い版のままです（web フォルダの中に上書きしてください）")
+    if probs:
+        print("=" * 60 + "\n[ファイルの確認でエラー] 次のファイルを GitHub で差し替えてください\n" + "=" * 60)
+        for p in probs:
+            print(" - " + p)
+        raise SystemExit(1)
 
 
 def main():
+    check_files()
     pw = os.environ.get("SITE_PASSWORD")
     if not pw:
         raise SystemExit("環境変数 SITE_PASSWORD が設定されていません（GitHub の Secrets に登録してください）")
@@ -119,7 +160,7 @@ def main():
         print("=" * 60, "\n[更新処理でエラー] 以下が本当の原因です\n", "=" * 60, flush=True)
         traceback.print_exc()
         snap = U.load_snapshot()
-        if snap is None or snap.get("ver") != U.SNAP_VER:
+        if snap is None or snap.get("ver") != U.SNAP_VER or "learning" not in snap:
             raise SystemExit("前回の互換データがないため停止します（上のエラーを確認してください）")
         snap["errors"] = snap.get("errors", []) + [f"今回の更新に失敗したため前回のデータを表示: {type(e).__name__}: {e}"]
     payload = to_payload(snap)
