@@ -54,12 +54,20 @@ main{max-width:760px;margin:0 auto;padding:10px 12px}
 .stat{background:rgba(255,255,255,.12);border-radius:12px;padding:8px 10px}
 .stat b{display:block;font-size:1.05rem;line-height:1.25}
 .stat span{font-size:.68rem;opacity:.85}
-.ticket{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.85rem;background:rgba(0,0,0,.22);border-radius:10px;padding:9px 10px;word-break:break-all;line-height:1.7}
-.ticket i{font-style:normal;opacity:.6}
 .htext{font-size:.8rem;line-height:1.6;background:rgba(0,0,0,.18);border-radius:10px;padding:9px 10px}
 .row{display:flex;gap:8px;align-items:center}
 .hbtn{flex:1;border:0;border-radius:10px;padding:9px;background:rgba(255,255,255,.95);color:#1e3a8a;font-weight:700;font-size:.85rem}
 .hbtn.ghost{background:rgba(255,255,255,.14);color:#fff}
+
+/* ---------- 買い目グリッド ---------- */
+.tgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(58px,1fr));gap:6px;background:rgba(0,0,0,.2);border-radius:12px;padding:8px}
+.tc{background:rgba(255,255,255,.1);border-radius:9px;padding:4px 2px 6px;text-align:center}
+.tc span{display:block;font-size:.64rem;opacity:.8;margin-bottom:2px}
+.tc div{display:flex;gap:2px;justify-content:center}
+.tc b{min-width:17px;height:22px;border-radius:5px;display:grid;place-items:center;font-size:.82rem;color:#fff;padding:0 3px;font-weight:800}
+.tc.multi{background:rgba(250,204,21,.2);box-shadow:inset 0 0 0 1.5px rgba(250,204,21,.75)}
+.tleg{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:.68rem;opacity:.9;margin-top:6px}
+.tleg i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:3px;vertical-align:-1px}
 
 .ctl{display:grid;gap:10px}
 .ctl label{font-size:.72rem;color:var(--sub);display:block;margin-bottom:4px}
@@ -110,6 +118,13 @@ main{max-width:760px;margin:0 auto;padding:10px 12px}
 .cmt{margin-top:10px;background:var(--bg2);border-radius:10px;padding:9px 11px;font-size:.78rem;line-height:1.6}
 .cmt b{display:block;font-size:.72rem;color:var(--ng);margin-bottom:2px}
 .cmt ul{margin:0;padding-left:1.1em}
+
+.adv .advsum{font-size:.82rem;line-height:1.7;margin:4px 0 8px}
+.advlist{list-style:none;margin:0;padding:0}
+.advlist li{display:grid;grid-template-columns:28px 1fr;gap:6px;padding:8px 0;border-top:1px solid var(--line);font-size:.82rem;line-height:1.5}
+.advno{width:26px;height:22px;border-radius:7px;background:var(--bg2);font-weight:800;display:grid;place-items:center;font-size:.72rem}
+.advpk{color:var(--acc);font-size:.95rem}
+.advlist small{color:var(--sub);font-size:.74rem}
 
 .sheet{width:100%;border-collapse:separate;border-spacing:0 4px;font-size:.8rem}
 .sheet td{padding:4px 3px}
@@ -236,7 +251,7 @@ input[type=range]{width:100%;accent-color:var(--acc)}
 const $ = s => document.querySelector(s);
 const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-let D = null;
+let D = null, COPY_TEXT = "";
 const S = Object.assign({view:"pred", kind:0, rkind:0, budget:1000, alpha:0, detail:false, expand:false, lg:"all", q:"", missOnly:false},
   JSON.parse(localStorage.getItem("toto_state") || "{}"));
 const save = () => localStorage.setItem("toto_state", JSON.stringify(S));
@@ -343,7 +358,7 @@ function render() {
     S.kind = Math.min(S.kind, D.kinds.length - 1);
     h += `<div class="ktabs">` + D.kinds.map((k, i) => `<button class="${i === S.kind ? "on" : ""}" data-k="${i}">${k.kind.replace("mini toto-", "mini ")}</button>`).join("") + `</div>`;
     const K = D.kinds[S.kind], slots = slotsOf(K), T = buildTicket(slots, Math.floor(S.budget / 100), S.alpha);
-    h += hero(K, slots, T) + (S.view === "pred" ? predView(K, slots, T) : sheetView(K, slots, T));
+    h += hero(K, slots, T) + adviceCard(K, slots, T) + (S.view === "pred" ? predView(K, slots, T) : sheetView(K, slots, T));
   } else if (S.view === "review") h += reviewView();
   else if (S.view === "teams") h += teamsView();
   else h += modelView();
@@ -353,9 +368,21 @@ function render() {
 }
 
 // ================= 予想 =================
+function ticketGrid(K, slots, T) {
+  const isG = K.kind === "totoGOAL3";
+  const lab = (s, k) => s.lab[k] === "3" ? "3+" : s.lab[k];
+  const col = (s, k) => isG ? C4[k] : pickColor(s.lab[k]);
+  COPY_TEXT = `第${K.round}回 ${K.kind}\n` + slots.map((s, i) => `${s.key}: ${T.picks[i].map(k => lab(s, k)).join("")}`).join("\n");
+  const cells = slots.map((s, i) => `<div class="tc ${T.picks[i].length > 1 ? "multi" : ""}"><span>${isG ? s.key : "No." + s.key}</span>
+    <div>${T.picks[i].map(k => `<b style="background:${col(s, k)}">${lab(s, k)}</b>`).join("")}</div></div>`).join("");
+  const leg = isG
+    ? `<span>数字＝そのチームの得点（3+は3点以上）</span><span>黄色の枠＝複数選択</span>`
+    : `<span><i style="background:var(--c1)"></i>1 ホーム勝ち</span><span><i style="background:#64748b"></i>0 引き分け</span><span><i style="background:var(--c2)"></i>2 アウェイ勝ち</span><span>黄色の枠＝ダブル・トリプル</span>`;
+  return `<div class="tgrid">${cells}</div><div class="tleg">${leg}</div>`;
+}
+
 function hero(K, slots, T) {
   const dl = left(K.deadline);
-  const ticket = slots.map((s, i) => `<i>${s.key}:</i>${T.picks[i].map(k => s.lab[k] === "3" ? "3+" : s.lab[k]).join("")}`).join("  ");
   const strat = [[0,"的中重視"],[.4,"バランス"],[.8,"妙味重視"]];
   return `<div class="card hero">
     <div class="ttl"><h2>第${K.round}回 ${K.kind}</h2>${dl ? `<span class="dl ${dl.cls}">${dl.t}</span>` : ""}</div>
@@ -364,7 +391,7 @@ function hero(K, slots, T) {
       <div class="stat"><b>${oneIn(T.hit)}</b><span>的中確率 ${pct(T.hit, T.hit < .01 ? 3 : 1)}</span></div>
       <div class="stat"><b>${T.share !== null ? oneIn(T.share) : "-"}</b><span>同じく当たる人</span></div>
     </div>
-    <div class="ticket" id="ticket">${ticket}</div>
+    ${ticketGrid(K, slots, T)}
     <div class="row" style="margin-top:10px">
       <button class="hbtn" id="copy">買い目をコピー</button>
       <button class="hbtn ghost" id="toSheet">${S.view === "sheet" ? "カード表示" : "マークシート"}</button>
@@ -377,6 +404,58 @@ function hero(K, slots, T) {
       `<button data-a="${a}" class="${Math.abs(S.alpha - a) < .05 ? "on" : ""}">${t}</button>`).join("")}</div></div>
   </div>`;
 }
+
+// ================= おすすめ買い目のコメント =================
+function adviceCard(K, slots, T) {
+  const isG = K.kind === "totoGOAL3";
+  const lab = k => isG ? (k === 3 ? "3+" : String(k)) : OUT3[k];
+  const name = s => isG ? `${s.key.endsWith("H") ? s.r.home : s.r.away}の得点` : `${s.r.home}-${s.r.away}`;
+  const items = slots.map((s, i) => {
+    const p = s.p, sel = T.picks[i], cov = sel.reduce((a, k) => a + p[k], 0);
+    const order = p.map((x, k) => [x, k]).sort((a, b) => b[0] - a[0]);
+    const val = s.v ? sel.filter(k => p[k] / Math.max(s.v[k], 1e-3) >= 1.25 && p[k] >= .2) : [];
+    let type, why;
+    if (sel.length === p.length) {
+      type = "全通り"; why = `差が小さい混戦（${p.map(x => pct(x)).join("/")}）なので全部押さえ`;
+    } else if (sel.length === 1) {
+      const k = sel[0];
+      if (p[k] >= .55) { type = "本命1点"; why = `${lab(k)}が${pct(p[k])}と抜けている`; }
+      else if (p[k] >= .45) { type = "1点"; why = `${lab(k)}が${pct(p[k])}で優勢`; }
+      else { type = "1点(要注意)"; why = `${lab(k)}は${pct(p[k])}と決め手に欠けるが、予算の都合で1点に絞った`; }
+      if (k !== order[0][1]) why += `（確率1位の${lab(order[0][1])}ではなく、人気薄で妙味のある${lab(k)}を選択）`;
+    } else {
+      const out = [...Array(p.length).keys()].filter(k => !sel.includes(k));
+      type = isG ? `${sel.length}点` : "ダブル";
+      why = `${sel.map(lab).join("・")}で${pct(cov)}をカバー。${out.map(lab).join("・")}（${out.map(k => pct(p[k])).join("/")}）は切り`;
+    }
+    if (s.v && !isG) {
+      const maj = s.v.indexOf(Math.max(...s.v));
+      if (!sel.includes(maj) && s.v[maj] >= .45) why += `。世間の${pct(s.v[maj])}が推す${lab(maj)}を外す逆張り`;
+    }
+    if (val.length) why += `。${val.map(lab).join("・")}は投票率より予想が高く妙味あり`;
+    return {i, s, sel, cov, type, why, risk: sel.length === 1 && sel.length < p.length ? 1 - cov : 0};
+  });
+  const singles = items.filter(x => x.sel.length === 1 && x.sel.length < x.s.p.length);
+  const multi = items.filter(x => x.sel.length > 1);
+  const weak = singles.filter(x => x.risk > .5).sort((a, b) => b.risk - a.risk).slice(0, 2);
+  const lines = [];
+  lines.push(`${T.units}口（${(T.units * 100).toLocaleString()}円）で、全${slots.length}${isG ? "枠" : "試合"}が当たる確率は約${pct(T.hit, T.hit < .01 ? 2 : 1)}（${oneIn(T.hit)}）。`);
+  if (multi.length) lines.push(`混戦の${multi.map(x => isG ? x.s.key : "No." + x.s.r.no).join("・")}に予算を回し` +
+    (singles.length ? `、残り${singles.length}${isG ? "枠" : "試合"}は1点に絞っています。` : `ています。`));
+  else lines.push(`予算内では複数選択ができないため、全${isG ? "枠" : "試合"}を確率1位の1点で組んでいます。`);
+  if (weak.length) lines.push(`外れやすいのは ${weak.map(x => `${isG ? x.s.key : "No." + x.s.r.no}（${name(x.s)}、外れる確率${pct(x.risk)}）`).join("、")}。ここが当たるかが勝負どころです。`);
+  if (T.share !== null) lines.push(T.share < .02
+    ? `当たった場合、同じ組み合わせを当てる人は少なめ（${oneIn(T.share)}）で、配当にも期待できます。`
+    : `人気どおりの組み合わせが多く、当たっても配当は控えめになりやすいです。配当を狙うなら方針を「妙味重視」に。`);
+  const steps = [100, 300, 1000, 3000, 10000], nb = steps.find(b => b > S.budget);
+  if (nb) { const T2 = buildTicket(slots, Math.floor(nb / 100), S.alpha);
+    if (T2.hit > T.hit * 1.3) lines.push(`予算を${nb.toLocaleString()}円にすると、的中確率は${pct(T.hit, 1)} → ${pct(T2.hit, 1)}に上がります。`); }
+  return `<div class="card adv"><h3>おすすめ買い目の解説</h3>
+    <p class="advsum">${lines.map(esc).join("")}</p>
+    <ul class="advlist">${items.map(x => `<li><span class="advno">${isG ? x.s.key : x.s.r.no}</span>
+      <span><b>${esc(name(x.s))}</b> → <b class="advpk">${x.sel.map(lab).join("")}</b> <span class="badge ${x.type.includes("要注意") ? "b-close" : x.sel.length === 1 ? "b-solid" : "b-gray"}">${x.type}</span><br><small>${esc(x.why)}</small></span></li>`).join("")}</ul></div>`;
+}
+
 function badges(p, v) {
   const mx = Math.max(...p); let b = "";
   if (mx >= .6) b += `<span class="badge b-solid">堅い</span>`; else if (mx < .45) b += `<span class="badge b-close">混戦</span>`;
@@ -457,7 +536,6 @@ function reviewView() {
   S.rkind = Math.min(S.rkind, R.length - 1);
   let h = `<div class="ktabs">` + R.map((k, i) => `<button class="${i === S.rkind ? "on" : ""}" data-rk="${i}">${k.kind.replace("mini toto-", "mini ")}</button>`).join("") + `</div>`;
   const V = R[S.rkind], s = V.summary, isG = V.kind === "totoGOAL3";
-  const tcls = s.ticket === "的中" ? "b-ok" : s.ticket.startsWith("外れ") ? "b-ng" : "b-gray";
   h += `<div class="card hero rv">
     <div class="ttl"><h2>第${s.round}回 ${V.kind} の結果</h2>${s.reconstructed ? `<span class="dl">当時のデータで再現した予想</span>` : `<span class="dl">締切時点の予想</span>`}</div>
     <div class="stats num">
@@ -481,7 +559,7 @@ function reviewView() {
         ${r.comments ? `<div class="cmt"><b>分析</b><ul>${r.comments.map(c => `<li>${esc(c)}</li>`).join("")}</ul></div>` : ""}</div>`;
     } else {
       const sc = r.score ? r.score.split("-") : null;
-      h += `<div class="card m ${st}"><div class="mh"><span class="no">${r.no}</span>${md(r.date)}${badge}${r.in_ticket === false && r.hit === false ? "" : r.in_ticket && !r.hit ? `<span class="badge b-solid">買い目では的中</span>` : ""}</div>
+      h += `<div class="card m ${st}"><div class="mh"><span class="no">${r.no}</span>${md(r.date)}${badge}${r.in_ticket && !r.hit ? `<span class="badge b-solid">買い目では的中</span>` : ""}</div>
         <div class="vs">
           <div class="tm">${esc(r.home)}<small>予想 <span class="pk" style="display:inline-grid;width:22px;height:22px;font-size:.75rem;background:${pickColor(OUT3[r.pick])}">${OUT3[r.pick]}</span></small></div>
           <div class="score num">${sc ? `${sc[0]} - ${sc[1]}` : "- -"}<small>${r.actual != null ? "結果 " + OUT3[r.actual] : ""}</small></div>
@@ -535,7 +613,7 @@ function modelView() {
   let h = `<div class="card"><h3>予想に使っている検討要素</h3>
     <p class="desc">振り返りのたびに候補を追加・検証します。数値は採用による改善幅（対数損失の減少、＋が改善）。</p>
     ${L.features.map(f => `<div class="feat"><b>${f.name}</b><span class="badge ${stCls[f.status]}">${f.status}</span>
-      <p>${f.desc}${f.gain != null ? `　<span class="num">効果 ${f.gain >= 0 ? "+" : ""}${f.gain.toFixed(4)}</span>` : ""}${f.since ? `・第${f.since}回の振り返り後に採用` : ""}${f.key === "vote" ? `・振り返り済み ${L.vote.n}/${L.vote.need}試合${L.vote.b ? `・比率${L.vote.b}` : ""}` : ""}</p></div>`).join("")}
+      <p>${f.desc}${f.gain != null ? `　<span class="num">効果 ${f.gain >= 0 ? "+" : ""}${f.gain.toFixed(4)}</span>` : ""}${f.since ? `・第${f.since}回の振り返り後に採用` : ""}${f.key === "vote" ? `・学習データ ${L.vote.n}/${L.vote.need}試合${L.vote.b ? `・比率${L.vote.b}` : ""}` : ""}</p></div>`).join("")}
   </div>`;
   if (tr.length) {
     h += `<div class="card"><h3>回ごとの成績（toto）</h3><p class="desc">本命の的中率の推移。学習の効果をここで確認できます。</p>
@@ -574,8 +652,7 @@ function bind() {
   const mo = $("#missOnly"); if (mo) mo.onclick = () => { S.missOnly = !S.missOnly; save(); render(); };
   const ts = $("#toSheet"); if (ts) ts.onclick = () => { S.view = S.view === "sheet" ? "pred" : "sheet"; save(); render(); };
   const cp = $("#copy"); if (cp) cp.onclick = async () => {
-    const txt = $("#ticket").innerText.replace(/\s+/g, " ").trim();
-    try { await navigator.clipboard.writeText(txt); toast("コピーしました"); } catch (e) { toast("コピーできませんでした"); } };
+    try { await navigator.clipboard.writeText(COPY_TEXT); toast("コピーしました"); } catch (e) { toast("コピーできませんでした"); } };
 }
 setInterval(() => { if (D) header(); }, 60000);
 </script>
