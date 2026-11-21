@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-toto 予想エンジン   v4
+toto 予想エンジン   v4.1
   - データ取得 : くじ対象試合・販売締切 / 投票率 / くじ結果（スポーツくじ公式）、過去結果（Ｊリーグデータサイト）
+  - 表示する回 : くじ種別ごとに『まだ試合が残っている回のうち一番古い回』（開催当日は当日の回）
   - モデル     : ① Dixon-Coles ポアソン（J1/J2/J3 の階層補正・ルヴァン杯の重み付け）
                  ② Elo + 順序ロジット（シーズン間の平均回帰・ルヴァン杯の重み付け）
                  → 過去データの答え合わせで設定値を自動調整し、2つを最適な比率で混合
@@ -41,10 +42,11 @@ KEEP_COMP = "J1|J2|J3|百年構想|ルヴァン|昇格|入れ替え|参入"
 DROP_COMP = "U-21|ユース|エリート|育成|サテライト|オールスター|ドリーム|ワールドチャレンジ|国際"
 CUP_RE = "ルヴァン"
 TIER = {"J1": 0, "J2": 1, "J3": 2}
+CARD_COLS = ["round", "kind", "no", "date", "time", "stadium", "home", "away", "deadline"]
 
 # ---- モデル設定（自動調整の候補と初期値）
 HP_VER = 1
-HP_RETUNE = 30                       # 結果がこの試合数ふえたら設定を再調整
+HP_RETUNE = 30
 POI_DEFAULT = {"half_life": 180, "l2": 0.05, "cup_w": 1.0, "tier": False}
 ELO_DEFAULT = {"k": 24, "hfa": 55, "regress": 0.0, "cup_w": 1.0}
 POI_GRID = [dict(half_life=h, l2=l, cup_w=c, tier=t)
@@ -141,26 +143,71 @@ def parse_toto_card(html_or_text, today=None) -> pd.DataFrame:
                          "date": _match_date(m.group(2), today), "time": m.group(3),
                          "stadium": m.group(4), "home": m.group(5), "away": m.group(6),
                          "deadline": deadline})
-    cols = ["round", "kind", "no", "date", "time", "stadium", "home", "away", "deadline"]
-    return pd.DataFrame(rows, columns=cols).drop_duplicates(["round", "kind", "no"])
+    return pd.DataFrame(rows, columns=CARD_COLS).drop_duplicates(["round", "kind", "no"])
 
 
-def latest_rounds(card: pd.DataFrame, today=None) -> pd.DataFrame:
+def current_rounds(card: pd.DataFrame, today=None) -> pd.DataFrame:
+    """
+    くじ種別ごとに『まだ試合が残っている回（最終試合日が今日以降）のうち、一番古い回』を選ぶ。
+    → 開催当日は当日の回を表示し、その回の試合がすべて終わった翌日に次の回へ切り替わる。
+    （v4 までは『一番新しい回』を選んでいたため、開催当日に次の回へ切り替わっていた）
+    """
     today = today or now_jst().date()
     if card.empty:
         return card
-    alive = card.groupby(["round", "kind"])["date"].transform("max") >= today
-    c = card[alive] if alive.any() else card
-    keep = c.groupby("kind")["round"].transform("max") == c["round"]
-    return c[keep].reset_index(drop=True)
+    last = card.groupby(["round", "kind"])["date"].transform("max")
+    alive = card[last >= today]
+    c = alive if not alive.empty else card
+    pick = c.groupby("kind")["round"].transform("min" if not alive.empty else "max") == c["round"]
+    return c[pick].reset_index(drop=True)
 
 
-def fetch_card(round_no=None):
+latest_rounds = current_rounds      # 旧名との互換
+
+
+def _in_progress_from_results(kind, rnd, today, log=print):
+    """販売が終わって『くじ情報』に載っていない開催中の回を『くじ結果』ページから探す"""
+    found = None
+    for r in range(rnd - 1, rnd - 4, -1):
+        try:
+            res = fetch_round_result(r)
+        except Exception as e:  # noqa
+            log(f"第{r}回のくじ結果を取得できず: {e}")
+            continue
+        g = res[(res["kind"] == kind) & (res["round"] == r)]
+        if g.empty:
+            continue
+        if max(g["date"]) >= today:
+            found = g
+            continue            # さらに古い回も開催中か確認
+        break                   # 終わった回に到達したら打ち切り
+    if found is None:
+        return None
+    out = found.copy()
+    out["time"] = ""
+    out["deadline"] = None
+    return out[CARD_COLS]
+
+
+def fetch_card(round_no=None, log=print):
     html = http_get(TOTO_INFO_URL, {"holdCntId": round_no} if round_no else None)
     card = parse_toto_card(html)
     if card.empty:
         raise RuntimeError("くじ情報ページから試合を読み取れませんでした（ページ構成変更の可能性）")
-    return card[card["round"] == round_no].reset_index(drop=True) if round_no else latest_rounds(card)
+    if round_no:
+        return card[card["round"] == round_no].reset_index(drop=True)
+    today = now_jst().date()
+    card = current_rounds(card, today)
+    parts = []
+    for kind, g in card.groupby("kind"):
+        rnd = int(g["round"].iloc[0])
+        older = _in_progress_from_results(kind, rnd, today, log)
+        if older is not None and int(older["round"].iloc[0]) < rnd:
+            log(f"{kind}: 開催中の第{int(older['round'].iloc[0])}回を表示（販売中の第{rnd}回は試合終了後に表示）")
+            parts.append(older)
+        else:
+            parts.append(g)
+    return pd.concat(parts, ignore_index=True)
 
 
 PCT_RE = re.compile(r"[\d,]+\s*[（(]\s*([\d.]+)\s*%\s*[）)]")
@@ -337,7 +384,6 @@ def fetch_results(cache_dir, refresh=False, log=print) -> pd.DataFrame:
 
 
 def clean_res(res: pd.DataFrame, log=print) -> pd.DataFrame:
-    """型を統一（保存CSVの文字列日付と取得データの日付型が混ざる問題への対策）"""
     res = res.copy()
     res["date"] = pd.to_datetime(res["date"].astype(str).str.slice(0, 10), format="%Y-%m-%d", errors="coerce")
     res["hg"] = pd.to_numeric(res["hg"], errors="coerce")
@@ -353,7 +399,6 @@ def clean_res(res: pd.DataFrame, log=print) -> pd.DataFrame:
 
 
 def team_leagues(res):
-    """各チームの直近のリーグ戦カテゴリ（J1/J2/J3）"""
     lg = res[~res["comp"].str.contains("ルヴァン|昇格|入れ替え|参入")].copy()
     lg["lv"] = lg["comp"].str.extract(r"J([123])")[0]
     lg.loc[lg["lv"].isna() & lg["comp"].str.contains("百年構想"), "lv"] = "1"
@@ -370,7 +415,7 @@ def _cup_mask(df):
 
 
 # =============================================================================
-# モデル① Dixon-Coles ポアソン（J1/J2/J3 の階層補正つき）
+# モデル① Dixon-Coles ポアソン
 # =============================================================================
 def _tau(x, y, lh, la, rho):
     t = np.ones_like(lh, dtype=float)
@@ -382,12 +427,6 @@ def _tau(x, y, lh, la, rho):
 
 
 class PoissonModel:
-    """
-    攻撃力 = カテゴリ平均 + チーム個別 として推定。
-    個別分だけを縮小するので、試合数の少ないチームは『そのカテゴリの平均』に寄る
-    （旧版は全カテゴリ共通の平均に寄せていたため、J3勢を強く、J1勢を弱く見積もりがちだった）。
-    """
-
     def __init__(self, half_life=180, l2=0.05, cup_w=1.0, tier=True):
         self.half_life, self.l2, self.cup_w, self.use_tier = half_life, l2, cup_w, tier
 
@@ -465,7 +504,7 @@ class PoissonModel:
 
 
 # =============================================================================
-# モデル② Elo + 順序ロジット（シーズン間の平均回帰つき）
+# モデル② Elo + 順序ロジット
 # =============================================================================
 def _sig(x):
     return 1 / (1 + np.exp(-x))
@@ -476,7 +515,6 @@ class EloModel:
         self.k, self.hfa, self.regress, self.cup_w = k, hfa, regress, cup_w
 
     def run(self, df):
-        """時系列順に更新し、各試合の『試合前』レート差を返す。40日以上の空白＝シーズンの切れ目で平均に寄せる"""
         self.r, self.init = {}, {}
         diffs = np.empty(len(df))
         last = None
@@ -541,7 +579,7 @@ def metrics(P, y):
 
 
 # =============================================================================
-# 検討要素（試合前時点の特徴量）と学習補正
+# 検討要素と学習補正
 # =============================================================================
 def match_features(res):
     r = res.reset_index(drop=True)
@@ -671,7 +709,7 @@ def cv_score(active, P, F, y, k=5):
 
 
 # =============================================================================
-# 学習：設定値の自動調整（ウォークフォワード検証）
+# 学習：設定値の自動調整
 # =============================================================================
 def _wf_split(res, frac=0.4):
     s = int(len(res) * (1 - frac))
@@ -689,7 +727,6 @@ def elo_oos(res, s_idx, y, cfg):
 
 
 def poisson_oos(res, s_idx, t0, configs, base, step=42):
-    """各設定について、step日ごとに『それ以前のデータだけ』で学習 → 次の区間を予想"""
     chunks, t, end = [], t0, res["date"].max()
     while t <= end:
         te = np.where((res["date"] >= t) & (res["date"] < t + pd.Timedelta(days=step)))[0]
@@ -713,9 +750,6 @@ def poisson_oos(res, s_idx, t0, configs, base, step=42):
 
 
 def train(res: pd.DataFrame, today=None, hp=None, log=print):
-    """
-    hp : 前回までに決めた設定値。結果が HP_RETUNE 試合以上ふえていたら候補の中から選び直す。
-    """
     today = pd.Timestamp(today or now_jst().date())
     res = res.sort_values("date").reset_index(drop=True)
     y = outcome_code(res)
@@ -871,7 +905,7 @@ def analyze_card(card, pred: Predictor, votes):
 
 
 # =============================================================================
-# 買い目（サイト側JSと同じロジック。振り返り用に既定予算で作成）
+# 買い目
 # =============================================================================
 def slots_of(kind, rows):
     if kind == "totoGOAL3":
