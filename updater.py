@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""取得 → 振り返り → 学習（設定の自動調整・検討要素・投票率）→ 予想 → 保存 をまとめて実行   v4"""
+"""取得 → 振り返り → 学習（設定の自動調整・検討要素・投票率）→ 予想 → 保存 をまとめて実行   v6（オッズ市場モデル）"""
 import pickle
 import traceback
 from pathlib import Path
@@ -74,6 +74,12 @@ def refresh(force_results=False, password=None, log=print):
             if len(g) and all(x is not None for x in vv):
                 votes[kind] = vv
 
+    # v6: 任意の data/odds.csv。未取得・不正でも空辞書で安全に継続。
+    import os
+    odds_path = Path(os.environ.get("ODDS_CSV_PATH", DATA / "odds.csv"))
+    odds = E.load_odds(card, odds_path)
+    lg(f"オッズ: {len(odds)}試合取得" if odds else "オッズ: 未取得（従来モデルのみで継続）")
+
     last = res["date"].max()
     lag = (E.now_jst().date() - last.date()).days
     if lag > 21:
@@ -109,6 +115,26 @@ def refresh(force_results=False, password=None, log=print):
         if s["complete"] and key not in reviewed:
             new_reviews.append(rv)
 
+    # v6: 完了した回だけをオッズ学習履歴へ追加（途中結果・未来情報は不使用）。
+    oh = state.setdefault("odds_hist", [])
+    seen_odds = {(x.get("round"), x.get("kind"), x.get("no")) for x in oh}
+    for kind, key in prev_keys.items():
+        if kind == "totoGOAL3" or kind not in reviews:
+            continue
+        rv, e = reviews[kind], arch[key]
+        if not rv["summary"].get("complete"):
+            continue
+        for saved, judged in zip(e.get("rows", []), rv.get("rows", [])):
+            k = (int(e["round"]), kind, int(saved["no"]))
+            pm, actual = saved.get("p_market"), judged.get("actual")
+            p0 = saved.get("p_pre_odds") or saved.get("p_model") or saved.get("p")
+            if k in seen_odds or pm is None or p0 is None or actual is None:
+                continue
+            oh.append({"round": k[0], "kind": kind, "no": k[2], "date": saved.get("date", ""),
+                       "p_model": p0, "p_market": pm, "a": int(actual)})
+            seen_odds.add(k)
+    state["odds_hist"] = oh[-1200:]
+
     # 5) 学習
     lg("学習開始")
     M = E.train(res, hp=L0.get("hp"), log=lg)
@@ -123,8 +149,8 @@ def refresh(force_results=False, password=None, log=print):
        f" / 投票率の比率 {L['vote_b']}")
 
     # 6) 次回の予想
-    pred = E.Predictor(res, M["poisson"], M["elo"], M["w"], M["base"], M["stacker"], M["vote_b"])
-    analysis = E.analyze_card(card, pred, votes)
+    pred = E.Predictor(res, M["poisson"], M["elo"], M["w"], M["base"], M["stacker"], M["vote_b"], L.get("odds_w", 0.0))
+    analysis = E.analyze_card(card, pred, votes, odds)
     try:
         leagues = E.team_leagues(res)
     except Exception as e:
@@ -134,7 +160,7 @@ def refresh(force_results=False, password=None, log=print):
     R.save_state(state, DATA)
     lg("分析完了")
 
-    snap = {"ver": SNAP_VER, "updated": E.now_jst(), "card": card, "res": res, "votes": votes, "model": M,
+    snap = {"ver": SNAP_VER, "updated": E.now_jst(), "card": card, "res": res, "votes": votes, "odds": odds, "model": M,
             "analysis": analysis, "leagues": leagues, "logs": logs, "errors": errors,
             "reviews": reviews, "learning": L, "state": state}
     DATA.mkdir(exist_ok=True)

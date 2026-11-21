@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-toto 予想エンジン   v4.1
+toto 予想エンジン   v6.0（オッズ市場モデル・安全フォールバック）
   - データ取得 : くじ対象試合・販売締切 / 投票率 / くじ結果（スポーツくじ公式）、過去結果（Ｊリーグデータサイト）
   - 表示する回 : くじ種別ごとに『まだ試合が残っている回のうち一番古い回』（開催当日は当日の回）
   - モデル     : ① Dixon-Coles ポアソン（J1/J2/J3 の階層補正・ルヴァン杯の重み付け）
@@ -570,12 +570,87 @@ def outcome_code(df):
     return np.where(df["hg"] > df["ag"], 0, np.where(df["hg"] == df["ag"], 1, 2))
 
 
+# =============================================================================
+# v6: オッズ市場モデル（オッズ未取得時は完全に従来モデルへフォールバック）
+# =============================================================================
+def odds_to_prob(odds):
+    """10進オッズ [home, draw, away] から控除率を除いた確率を返す。無効なら None。"""
+    if odds is None:
+        return None
+    try:
+        o = np.asarray(odds, float)
+    except Exception:
+        return None
+    if o.shape != (3,) or not np.isfinite(o).all() or np.any(o <= 1.0):
+        return None
+    q = 1.0 / o
+    return q / q.sum()
+
+
+def log_pool(p_model, p_market, weight):
+    """対数加重平均。weight=0 はモデルのみ、1 は市場のみ。"""
+    p = np.clip(np.asarray(p_model, float), 1e-9, 1)
+    if p_market is None or weight <= 0:
+        return p / p.sum()
+    m = np.clip(np.asarray(p_market, float), 1e-9, 1)
+    w = float(np.clip(weight, 0, 1))
+    q = np.exp((1 - w) * np.log(p) + w * np.log(m))
+    return q / q.sum()
+
+
+def js_divergence(p, q):
+    """Jensen-Shannon divergence（0=一致、約0.693=最大）。"""
+    if q is None:
+        return None
+    p, q = np.clip(np.asarray(p,float),1e-9,1), np.clip(np.asarray(q,float),1e-9,1)
+    p, q = p/p.sum(), q/q.sum(); m=(p+q)/2
+    return float(.5*np.sum(p*np.log(p/m)) + .5*np.sum(q*np.log(q/m)))
+
+
+def load_odds(card, path):
+    """
+    任意CSVを読む。列: round,kind,no,home_odds,draw_odds,away_odds[,captured_at]
+    kind は省略可（toto扱い）。欠損・古い・不正な行は無視する。
+    戻り値: {(round,kind,no): {odds,p_market,captured_at}}
+    """
+    from pathlib import Path
+    path = Path(path)
+    if not path.exists():
+        return {}
+    try:
+        df = pd.read_csv(path)
+    except Exception:
+        return {}
+    need={'round','no','home_odds','draw_odds','away_odds'}
+    if not need.issubset(df.columns):
+        return {}
+    if 'kind' not in df: df['kind']='toto'
+    ans={}
+    for _,r in df.iterrows():
+        pm=odds_to_prob([r.home_odds,r.draw_odds,r.away_odds])
+        if pm is None: continue
+        key=(int(r['round']),str(r['kind']),int(r['no']))
+        ans[key]={'odds':[float(r.home_odds),float(r.draw_odds),float(r.away_odds)],
+                  'p_market':pm,'captured_at':str(r.get('captured_at',''))}
+    return ans
+
+
 def metrics(P, y):
     P = np.clip(np.asarray(P, float), 1e-9, 1)
     onehot = np.eye(3)[y]
+    cp, co = np.cumsum(P, axis=1)[:, :2], np.cumsum(onehot, axis=1)[:, :2]
+    conf=P.max(1); correct=(P.argmax(1)==y).astype(float)
+    ece=0.0
+    for lo,hi in zip(np.linspace(0,1,11)[:-1],np.linspace(0,1,11)[1:]):
+        z=(conf>=lo)&(conf<(hi if hi<1 else 1.01))
+        if z.any(): ece += z.mean()*abs(conf[z].mean()-correct[z].mean())
     return {"ll": float(-np.mean(np.log(P[np.arange(len(y)), y]))),
             "brier": float(np.mean(np.sum((P - onehot) ** 2, axis=1))),
-            "acc": float(np.mean(P.argmax(1) == y))}
+            "acc": float(np.mean(correct)),
+            "rps": float(np.mean(np.sum((cp-co)**2,axis=1)/2)),
+            "ece": float(ece),
+            "draw_pred": float(P[:,1].mean()), "draw_act": float((y==1).mean()),
+            "sharpness": float(np.mean(np.std(P,axis=1)))}
 
 
 # =============================================================================
@@ -822,13 +897,14 @@ def head_to_head(res, h, a, n=5, before=None):
 
 
 class Predictor:
-    def __init__(self, res, poi, elo, w, base, stacker=None, vote_b=0.0):
+    def __init__(self, res, poi, elo, w, base, stacker=None, vote_b=0.0, odds_w=0.0):
         self.res, self.poi, self.elo, self.w, self.base = res, poi, elo, w, base
         self.stacker = stacker or Stacker()
         self.vote_b = vote_b
+        self.odds_w = float(np.clip(odds_w, 0, 1))
 
     @classmethod
-    def fit(cls, res, today, w=0.5, stacker=None, vote_b=0.0, hp=None):
+    def fit(cls, res, today, w=0.5, stacker=None, vote_b=0.0, hp=None, odds_w=0.0):
         hp = hp or {}
         res = res.sort_values("date").reset_index(drop=True)
         y = outcome_code(res)
@@ -836,7 +912,7 @@ class Predictor:
         d = elo.run(res)
         elo.fit_logit(d, y, 0.5 ** ((res["date"].max() - res["date"]).dt.days.to_numpy() / 365))
         poi = PoissonModel(**(hp.get("poi") or POI_DEFAULT)).fit(res, today, team_leagues(res))
-        return cls(res, poi, elo, w, np.bincount(y, minlength=3) / len(y), stacker, vote_b)
+        return cls(res, poi, elo, w, np.bincount(y, minlength=3) / len(y), stacker, vote_b, odds_w)
 
     def predict(self, home, away, mdate):
         h, a = to_short(home), to_short(away)
@@ -881,7 +957,8 @@ class Predictor:
         return q / q.sum()
 
 
-def analyze_card(card, pred: Predictor, votes):
+def analyze_card(card, pred: Predictor, votes, odds=None):
+    odds = odds or {}
     out = {}
     for kind, g in card.groupby("kind"):
         rows = []
@@ -900,6 +977,20 @@ def analyze_card(card, pred: Predictor, votes):
                     row["v"] = np.array(vv)
                     row["p_model"] = row["p"]
                     row["p"] = pred.blend_vote(row["p"], row["v"])
+        # v6市場モデル: toto/miniのみ。市場データがなければ確率は一切変更しない。
+        if kind != "totoGOAL3":
+            rnd = int(g["round"].iloc[0])
+            for row in rows:
+                od = odds.get((rnd, kind, int(row["no"])))
+                if od is None and kind.startswith("mini"):
+                    od = odds.get((rnd, "toto", int(row["no"])))
+                row["p_pre_odds"] = np.asarray(row["p"]).copy()
+                row["odds"] = od.get("odds") if od else None
+                row["p_market"] = od.get("p_market") if od else None
+                row["odds_captured_at"] = od.get("captured_at", "") if od else ""
+                row["divergence"] = js_divergence(row["p_pre_odds"], row["p_market"])
+                row["market_alert"] = bool(row["divergence"] is not None and row["divergence"] >= 0.025)
+                row["p"] = log_pool(row["p_pre_odds"], row["p_market"], pred.odds_w)
         out[kind] = rows
     return out
 

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-予想の保存（アーカイブ）と振り返り   v4
+予想の保存（アーカイブ）と振り返り   v6
   - 毎回の予想を保存し、販売締切を過ぎたら確定（以後は上書きしない）
   - 直前の回は、公式「くじ結果」ページから対象試合とスコアを取得して照合
     （予想が保存されていない回は、試合前のデータだけで予想を再現）
@@ -100,11 +100,11 @@ def save_state(state, data_dir):
 
 # ---------------------------------------------------------------- アーカイブ
 def _ser_row(r):
-    keys = ["no", "time", "home", "away", "hs", "as", "p", "p_model", "p_base", "p_poi", "p_elo", "v", "lam",
+    keys = ["no", "time", "home", "away", "hs", "as", "p", "p_model", "p_pre_odds", "p_market", "odds", "odds_captured_at", "divergence", "market_alert", "p_base", "p_poi", "p_elo", "v", "lam",
             "rest_h", "rest_a", "g_h", "g_a", "v_h", "v_a", "h2h", "note"]
     d = {k: r.get(k) for k in keys}
     d["date"] = pd.Timestamp(r["date"]).strftime("%Y-%m-%d")
-    for k in ["p", "p_model", "p_base", "p_poi", "p_elo", "v", "g_h", "g_a", "v_h", "v_a"]:
+    for k in ["p", "p_model", "p_pre_odds", "p_market", "odds", "p_base", "p_poi", "p_elo", "v", "g_h", "g_a", "v_h", "v_a"]:
         if d[k] is not None:
             d[k] = [round(float(x), 5) for x in d[k]]
     d["lam"] = [None if x is None else round(float(x), 3) for x in (r.get("lam") or (None, None))]
@@ -344,6 +344,14 @@ def comment_3way(r, pick, act, hg, ag):
     pp, pe = r.get("p_poi"), r.get("p_elo")
     if pp and pe and int(np.argmax(pp)) != int(np.argmax(pe)):
         c.append(f"2つのモデルの見立てが割れていました（ポアソン:{E.OUT3[int(np.argmax(pp))]} / Elo:{E.OUT3[int(np.argmax(pe))]}）。")
+    pm = r.get("p_market")
+    if pm:
+        mp = int(np.argmax(pm))
+        if mp == act and mp != pick:
+            c.append(f"オッズ市場は結果{E.OUT3[act]}を最有力（{_pct(pm[act])}）としており、市場側が正しかった試合です。")
+        elif r.get("market_alert"):
+            c.append("モデルとオッズ市場の見立てが大きく割れた『荒れ注意』試合でした。")
+
     return c
 
 

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-予想精度を上げる仕組み（回を重ねるごとに更新）   v4
+予想精度を上げる仕組み（回を重ねるごとに更新）   v6
   1) モデル設定の自動調整：結果が30試合ふえるごとに、半減期・縮小の強さ・ルヴァン杯の重み・
      Elo の更新幅/ホーム有利/シーズン間の平均回帰 を候補から選び直す（engine.train）
   2) 振り返り：外れ方から「検討要素」の候補を追加 → 時系列CVで検証 → 改善したものだけ採用
@@ -20,7 +20,7 @@ VOTE_GRID = np.round(np.arange(0, 2.01, 0.1), 1)
 def default_state():
     return {"active": [], "pool": ["temperature", "draw_bias"], "scores": {}, "adopted_at": {},
             "history": [], "track": [], "reviewed": [], "w": 0.5, "vote_b": 0.0, "vote_n": 0,
-            "stacker": None, "hp": None}
+            "stacker": None, "hp": None, "odds_w": 0.15, "odds_n": 0, "odds_status": "暫定（検証前）", "ver": 6}
 
 
 def _log(L, event, detail, rnd=None):
@@ -147,6 +147,41 @@ def fit_vote(L, state, log):
         L["vote_b"] = 0.0
 
 
+def walk_forward_market(rows, min_train=80):
+    """
+    過去オッズを古い順に4分割。各foldは過去だけで重みを選び、直後を評価する。
+    rows: [{p_model,p_market,a,date}]
+    採用条件: 全holdoutで LL/RPS がともに改善、かつ全体改善 LL>=.002/RPS>=.001。
+    """
+    if len(rows) < min_train:
+        return {"adopt":False,"weight":0.0,"n":len(rows),"reason":f"不足（{min_train}試合必要）"}
+    rows=sorted(rows,key=lambda r:r.get("date","")); P=np.array([r["p_model"] for r in rows]); O=np.array([r["p_market"] for r in rows]); y=np.array([r["a"] for r in rows],int)
+    chunks=np.array_split(np.arange(len(rows)),4); weights=np.arange(0,0.81,.1); folds=[]
+    for j in range(1,4):
+        tr=np.concatenate(chunks[:j]); te=chunks[j]
+        if len(tr)<min_train//2 or not len(te): continue
+        w=min(weights,key=lambda z:E.metrics(np.array([E.log_pool(P[i],O[i],z) for i in tr]),y[tr])["ll"])
+        base=E.metrics(P[te],y[te]); cand=E.metrics(np.array([E.log_pool(P[i],O[i],w) for i in te]),y[te])
+        folds.append({"w":float(w),"ll_gain":base["ll"]-cand["ll"],"rps_gain":base["rps"]-cand["rps"]})
+    if not folds: return {"adopt":False,"weight":0.0,"n":len(rows),"reason":"fold不足"}
+    w=float(np.median([f["w"] for f in folds])); ll=float(np.mean([f["ll_gain"] for f in folds])); rp=float(np.mean([f["rps_gain"] for f in folds]))
+    stable=all(f["ll_gain"]>0 and f["rps_gain"]>=0 for f in folds)
+    adopt=stable and ll>=.002 and rp>=.001
+    return {"adopt":adopt,"weight":w if adopt else 0.0,"n":len(rows),"ll_gain":ll,"rps_gain":rp,"folds":folds,"reason":"採用" if adopt else "改善が安定せず"}
+
+
+def fit_odds(L, state, log=print):
+    rows=state.get("odds_hist",[])
+    z=walk_forward_market(rows)
+    L["odds_n"] = z.get("n", 0)
+    if L["odds_n"] < 80:
+        L["odds_w"], L["odds_status"] = 0.15, "暫定重み（80試合で再検証）"
+    else:
+        L["odds_w"], L["odds_status"] = z.get("weight", 0.0), z.get("reason", "")
+    log(f"オッズ検証: {L['odds_n']}試合 / {L['odds_status']} / 重み {L['odds_w']}")
+    return z
+
+
 def update(state, M, new_reviews, log=print):
     L = state.setdefault("learning", default_state())
     for k, v in default_state().items():
@@ -200,4 +235,5 @@ def update(state, M, new_reviews, log=print):
                   for a, b in bands for m in [(conf >= a) & (conf < b)] if m.sum()]
     M["stacker"] = st
     M["vote_b"] = L["vote_b"]
+    fit_odds(L, state, log)
     return L
