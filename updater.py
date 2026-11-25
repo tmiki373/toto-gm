@@ -1,11 +1,23 @@
 # -*- coding: utf-8 -*-
 """
 取得 → 直前情報の記録（WINNERのオッズ・出場停止）→ 振り返り → 学習（診断・補正の検証・市場の重み）
-→ 予想（補正と市場を反映）→ 保存   v7
+→ 予想（補正と市場を反映）→ 保存   v7.1
+
+v7.1: 表示する回の決め方を変更
+  旧: 公式『くじ情報』ページ（販売中の回だけ載る）＋『くじ結果』ページの読み取りで開催中の回を探していた。
+      販売締切後は くじ情報 から回が消え、結果発表前の くじ結果 ページも読み取れないことがあるため、
+      結果が出ていないのに次の回へ切り替わっていた。
+  新: このサイトが保存している『予想した回（アーカイブ）』を基準にする。
+      くじ種別ごとに、予想した回のうち公式結果が全試合そろっていない一番古い回を表示し続ける。
+      切り替えるのは ①公式結果が全試合そろったとき、または ②最終試合日の2日後（中止・延期や
+      結果ページを読めない場合の安全策）のどちらか。
 """
 import pickle
 import traceback
+from datetime import timedelta
 from pathlib import Path
+
+import pandas as pd
 
 import engine as E
 import learning as LRN
@@ -15,6 +27,7 @@ ROOT = Path(__file__).resolve().parent
 DATA = ROOT / "data"
 SNAP = DATA / "snapshot.pkl"
 SNAP_VER = 5
+GRACE_DAYS = 2            # 公式結果がそろわなくても、最終試合日からこの日数が過ぎたら次の回へ
 
 
 def load_snapshot():
@@ -27,6 +40,59 @@ def load_snapshot():
     return None
 
 
+def _scores_complete(rc, rnd, kind):
+    """公式『くじ結果』で全試合のスコアがそろっているか（取得・読み取りできない場合は False）"""
+    c = rc.get(rnd)
+    if c is None or c.empty:
+        return False, 0, 0
+    g = c[(c["kind"] == kind) & (c["round"] == rnd)]
+    if g.empty:
+        return False, 0, 0
+    known = int((g["hg"].notna() & g["ag"].notna()).sum())
+    return known == len(g), known, len(g)
+
+
+def pin_open_rounds(card, state, rc, log=print):
+    """
+    くじ種別ごとに、保存済みの予想（アーカイブ）のうち『結果がまだそろっていない一番古い回』があれば、
+    販売中の次の回より優先して表示する。
+    """
+    today = E.now_jst().date()
+    arch = state.get("archive", {})
+    shown = {k: int(g["round"].iloc[0]) for k, g in card.groupby("kind")} if len(card) else {}
+    kinds = set(shown) | {e["kind"] for e in arch.values()}
+    parts = []
+    for kind in E.KINDS:
+        if kind not in kinds:
+            continue
+        cur = shown.get(kind)
+        cands = sorted((e for e in arch.values() if e["kind"] == kind and (cur is None or e["round"] < cur)
+                        and e.get("rows")), key=lambda e: e["round"])
+        pinned = None
+        for e in cands:
+            last = max(pd.Timestamp(r["date"]).date() for r in e["rows"])
+            if last < today - timedelta(days=GRACE_DAYS):
+                continue                                   # 安全策: 最終試合日から日数が経った回は終了扱い
+            done, known, n = _scores_complete(rc, e["round"], kind)
+            if done:
+                continue
+            pinned = e
+            log(f"{kind}: 第{e['round']}回は結果待ち（公式結果 {known}/{n or len(e['rows'])} 確定）のため表示を継続"
+                + (f"（販売中の第{cur}回は結果がそろってから表示）" if cur else ""))
+            break
+        if pinned is None:
+            if cur is not None:
+                parts.append(card[card["kind"] == kind])
+            continue
+        rows = [{"round": int(pinned["round"]), "kind": kind, "no": int(r["no"]),
+                 "date": pd.Timestamp(r["date"]).date(), "time": r.get("time") or "", "stadium": "",
+                 "home": r["home"], "away": r["away"], "deadline": pinned.get("deadline")} for r in pinned["rows"]]
+        parts.append(pd.DataFrame(rows, columns=E.CARD_COLS))
+    if not parts:
+        return card
+    return pd.concat(parts, ignore_index=True)
+
+
 def refresh(force_results=False, password=None, log=print):
     prev = load_snapshot() or {}
     if prev.get("ver") != SNAP_VER:
@@ -37,15 +103,25 @@ def refresh(force_results=False, password=None, log=print):
         logs.append(f"{E.now_jst():%H:%M:%S} {m}")
         log(m)
 
-    # 1) 対象試合
+    state = R.load_state(DATA, password, lg)
+    rc = R.ResultCache(lg)
+
+    # 1) 対象試合（販売中の回）→ 結果待ちの回があればそちらを優先
     try:
         card = E.fetch_card(log=lg)
-        lg("対象試合: " + ", ".join(f"{k} 第{g['round'].iloc[0]}回 {len(g)}試合" for k, g in card.groupby("kind")))
     except Exception as e:
         errors.append(f"対象試合の取得に失敗（前回のデータを表示）: {e}")
         card = prev.get("card")
         if card is None:
-            raise
+            card = pd.DataFrame(columns=E.CARD_COLS)
+    try:
+        card = pin_open_rounds(card, state, rc, lg)
+    except Exception:
+        lg("表示する回の判定で失敗（販売中の回を表示）:\n" + traceback.format_exc())
+    if card is None or card.empty:
+        raise RuntimeError("表示できる回がありません")
+    lg("表示する回: " + ", ".join(f"{k} 第{g['round'].iloc[0]}回 {len(g)}試合" for k, g in card.groupby("kind")))
+
     # 2) 過去結果
     try:
         res = E.fetch_results(DATA / "cache", refresh=force_results, log=lg)
@@ -82,9 +158,7 @@ def refresh(force_results=False, password=None, log=print):
     if lag > 21:
         errors.append(f"試合結果が {last:%Y/%m/%d} で止まっています（{lag}日前）。")
 
-    state = R.load_state(DATA, password, lg)
-
-    # 4) v7: 直前情報（失敗しても予想は続ける）
+    # 4) 直前情報（失敗しても予想は続ける）
     wm = []
     try:
         wm = E.fetch_winner_odds(lg)
@@ -100,7 +174,6 @@ def refresh(force_results=False, password=None, log=print):
     # 5) 振り返り
     L0 = state.get("learning", {})
     cur = {k: int(g["round"].iloc[0]) for k, g in card.groupby("kind")}
-    rc = R.ResultCache(lg)
     try:
         prev_keys = R.find_previous(state, cur, rc, res, lg)
     except Exception:
@@ -141,7 +214,7 @@ def refresh(force_results=False, password=None, log=print):
     lg(f"学習完了 / 採用中の補正: {[E.FEAT_INFO[a][0] for a in L['active']] or 'なし'}"
        f" / 市場の重み {L['market_a']}（得点 {L['market_ag']}） / 投票率 b={L['vote_b']} c={L['vote_c']}")
 
-    # 7) 予想（市場を混ぜる前の予想を WINNER の記録にも残す）
+    # 7) 予想
     smap = E.susp_map(state.get("susp_hist", []))
     pred = E.Predictor(res, M["poisson"], M["elo"], M["w"], M["base"], M["stacker"], M["vote_b"], M["vote_c"],
                        resid=M["resid"], standing=M["standing"], susp=smap,
