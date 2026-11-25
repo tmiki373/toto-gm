@@ -1,5 +1,8 @@
 # -*- coding: utf-8 -*-
-"""取得 → 振り返り → 学習（設定の自動調整・検討要素・投票率）→ 予想 → 保存 をまとめて実行   v6（オッズ市場モデル）"""
+"""
+取得 → 直前情報の記録（WINNERのオッズ・出場停止）→ 振り返り → 学習（診断・補正の検証・市場の重み）
+→ 予想（補正と市場を反映）→ 保存   v7
+"""
 import pickle
 import traceback
 from pathlib import Path
@@ -11,7 +14,7 @@ import review as R
 ROOT = Path(__file__).resolve().parent
 DATA = ROOT / "data"
 SNAP = DATA / "snapshot.pkl"
-SNAP_VER = 3
+SNAP_VER = 5
 
 
 def load_snapshot():
@@ -34,9 +37,9 @@ def refresh(force_results=False, password=None, log=print):
         logs.append(f"{E.now_jst():%H:%M:%S} {m}")
         log(m)
 
-    # 1) 対象試合（次回）
+    # 1) 対象試合
     try:
-        card = E.fetch_card()
+        card = E.fetch_card(log=lg)
         lg("対象試合: " + ", ".join(f"{k} 第{g['round'].iloc[0]}回 {len(g)}試合" for k, g in card.groupby("kind")))
     except Exception as e:
         errors.append(f"対象試合の取得に失敗（前回のデータを表示）: {e}")
@@ -54,7 +57,7 @@ def refresh(force_results=False, password=None, log=print):
     res = E.clean_res(res, log=lg)
     lg(f"結果データ合計: {len(res)}試合（{res['date'].min():%Y/%m/%d}〜{res['date'].max():%Y/%m/%d}）")
 
-    # 3) 投票率（次回）
+    # 3) toto 投票率
     votes = {}
     for kind, g in card.groupby("kind"):
         if kind.startswith("mini"):
@@ -74,68 +77,56 @@ def refresh(force_results=False, password=None, log=print):
             if len(g) and all(x is not None for x in vv):
                 votes[kind] = vv
 
-    # v6: 任意の data/odds.csv。未取得・不正でも空辞書で安全に継続。
-    import os
-    odds_path = Path(os.environ.get("ODDS_CSV_PATH", DATA / "odds.csv"))
-    odds = E.load_odds(card, odds_path)
-    lg(f"オッズ: {len(odds)}試合取得" if odds else "オッズ: 未取得（従来モデルのみで継続）")
-
     last = res["date"].max()
     lag = (E.now_jst().date() - last.date()).days
     if lag > 21:
         errors.append(f"試合結果が {last:%Y/%m/%d} で止まっています（{lag}日前）。")
 
-    # 4) 直前の回の振り返り
     state = R.load_state(DATA, password, lg)
+
+    # 4) v7: 直前情報（失敗しても予想は続ける）
+    wm = []
+    try:
+        wm = E.fetch_winner_odds(lg)
+    except Exception as e:
+        lg(f"WINNERオッズの取得に失敗（市場なしで続行）: {e}")
+    try:
+        n = R.record_susp(state, E.fetch_suspensions(lg))
+        lg(f"出場停止の記録: {len(state.get('susp_hist', []))}件（今回追加 {n}）")
+    except Exception as e:
+        lg(f"出場停止の取得に失敗（続行）: {e}")
+    R.record_votes(state, card, votes)
+
+    # 5) 振り返り
     L0 = state.get("learning", {})
     cur = {k: int(g["round"].iloc[0]) for k, g in card.groupby("kind")}
     rc = R.ResultCache(lg)
     try:
         prev_keys = R.find_previous(state, cur, rc, res, lg)
     except Exception:
-        lg("直前の回の特定で失敗:\n" + traceback.format_exc())
+        lg("振り返る回の特定で失敗:\n" + traceback.format_exc())
         prev_keys = {}
     reviewed = set(L0.get("reviewed", []))
     arch = state.get("archive", {})
     reviews, new_reviews = {}, []
     for kind, key in prev_keys.items():
         e = arch[key]
+        drift = R.vote_drift(state, e["round"]) if kind == "toto" else None
         try:
-            rv = R.review_entry(e, res)
+            rv = R.review_entry(e, res, drift)
         except Exception:
             lg(f"第{e['round']}回 {kind} の振り返りで失敗:\n" + traceback.format_exc())
             continue
-        if kind != "totoGOAL3":
-            e["_review_rows"] = [{"home": r["home"], "away": r["away"], "date": r["date"], "actual": it["actual"],
-                                  "v": r.get("v"), "p_model": r.get("p_model") or r["p"]}
-                                 for r, it in zip(e["rows"], rv["rows"])]
         reviews[kind] = rv
         s = rv["summary"]
-        lg(f"振り返り {kind} 第{s['round']}回: 結果 {s['known']}/{s['n']} 確定・的中 {s['hits']}")
+        lg(f"振り返り {kind} 第{s['round']}回: 結果 {s['known']}/{s['n']} 確定・的中 {s['hits']}"
+           f"{'（最終）' if s['complete'] else '（途中経過）'}")
         if s["complete"] and key not in reviewed:
             new_reviews.append(rv)
+    n_led = R.update_ledger(state, prev_keys, reviews)
+    lg(f"外れの記録: {len(state.get('ledger', []))}試合（今回追加 {n_led}）")
 
-    # v6: 完了した回だけをオッズ学習履歴へ追加（途中結果・未来情報は不使用）。
-    oh = state.setdefault("odds_hist", [])
-    seen_odds = {(x.get("round"), x.get("kind"), x.get("no")) for x in oh}
-    for kind, key in prev_keys.items():
-        if kind == "totoGOAL3" or kind not in reviews:
-            continue
-        rv, e = reviews[kind], arch[key]
-        if not rv["summary"].get("complete"):
-            continue
-        for saved, judged in zip(e.get("rows", []), rv.get("rows", [])):
-            k = (int(e["round"]), kind, int(saved["no"]))
-            pm, actual = saved.get("p_market"), judged.get("actual")
-            p0 = saved.get("p_pre_odds") or saved.get("p_model") or saved.get("p")
-            if k in seen_odds or pm is None or p0 is None or actual is None:
-                continue
-            oh.append({"round": k[0], "kind": kind, "no": k[2], "date": saved.get("date", ""),
-                       "p_model": p0, "p_market": pm, "a": int(actual)})
-            seen_odds.add(k)
-    state["odds_hist"] = oh[-1200:]
-
-    # 5) 学習
+    # 6) 学習
     lg("学習開始")
     M = E.train(res, hp=L0.get("hp"), log=lg)
     lg(f"モデル設定: {LRN._hp_text(M['hp'])}{'（今回再調整）' if M['retuned'] else ''}")
@@ -144,13 +135,27 @@ def refresh(force_results=False, password=None, log=print):
             R.vote_history(state, cur["toto"], rc, res, M["hp"], M["w"], lg)
         except Exception:
             lg("投票率の学習データ収集で失敗（続行）:\n" + traceback.format_exc())
-    L = LRN.update(state, M, new_reviews, log=lg)
-    lg(f"学習完了 / 採用中の検討要素: {[E.FEAT_INFO[a][0] for a in L['active']] or 'なし'}"
-       f" / 投票率の比率 {L['vote_b']}")
+    L = LRN.update(state, M, new_reviews, log=lg, res=res)
+    for f in L.get("findings", [])[:5]:
+        lg(f"  診断: {f['text']}（z={f['z']}）")
+    lg(f"学習完了 / 採用中の補正: {[E.FEAT_INFO[a][0] for a in L['active']] or 'なし'}"
+       f" / 市場の重み {L['market_a']}（得点 {L['market_ag']}） / 投票率 b={L['vote_b']} c={L['vote_c']}")
 
-    # 6) 次回の予想
-    pred = E.Predictor(res, M["poisson"], M["elo"], M["w"], M["base"], M["stacker"], M["vote_b"], L.get("odds_w", 0.0))
-    analysis = E.analyze_card(card, pred, votes, odds)
+    # 7) 予想（市場を混ぜる前の予想を WINNER の記録にも残す）
+    smap = E.susp_map(state.get("susp_hist", []))
+    pred = E.Predictor(res, M["poisson"], M["elo"], M["w"], M["base"], M["stacker"], M["vote_b"], M["vote_c"],
+                       resid=M["resid"], standing=M["standing"], susp=smap,
+                       market_a=M["market_a"], market_ag=M["market_ag"])
+    try:
+        n = R.record_market(state, wm, pred)
+        lg(f"WINNERオッズの記録: {len(state.get('market_hist', {}))}試合（今回更新 {n}）")
+    except Exception:
+        lg("WINNERオッズの記録で失敗（続行）:\n" + traceback.format_exc())
+    market = {**R.market_saved(state), **R.market_now(wm)}
+    analysis = E.analyze_card(card, pred, votes, market)
+    nm = sum(1 for k in analysis for r in analysis[k] if r.get("m") is not None or r.get("m_g_h") is not None)
+    lg(f"対象試合のうち WINNERのオッズあり: {nm}試合")
+    LRN.attach_effects(L, analysis)
     try:
         leagues = E.team_leagues(res)
     except Exception as e:
@@ -160,7 +165,7 @@ def refresh(force_results=False, password=None, log=print):
     R.save_state(state, DATA)
     lg("分析完了")
 
-    snap = {"ver": SNAP_VER, "updated": E.now_jst(), "card": card, "res": res, "votes": votes, "odds": odds, "model": M,
+    snap = {"ver": SNAP_VER, "updated": E.now_jst(), "card": card, "res": res, "votes": votes, "model": M,
             "analysis": analysis, "leagues": leagues, "logs": logs, "errors": errors,
             "reviews": reviews, "learning": L, "state": state}
     DATA.mkdir(exist_ok=True)
