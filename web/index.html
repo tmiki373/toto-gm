@@ -59,7 +59,6 @@ main{max-width:760px;margin:0 auto;padding:10px 12px}
 .hbtn{flex:1;border:0;border-radius:10px;padding:9px;background:rgba(255,255,255,.95);color:#1e3a8a;font-weight:700;font-size:.85rem}
 .hbtn.ghost{background:rgba(255,255,255,.14);color:#fff}
 
-/* ---------- 買い目グリッド ---------- */
 .tgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(58px,1fr));gap:6px;background:rgba(0,0,0,.2);border-radius:12px;padding:8px}
 .tc{background:rgba(255,255,255,.1);border-radius:9px;padding:4px 2px 6px;text-align:center}
 .tc span{display:block;font-size:.64rem;opacity:.8;margin-bottom:2px}
@@ -82,12 +81,13 @@ main{max-width:760px;margin:0 auto;padding:10px 12px}
 
 .m{padding:12px 14px}
 .m.hit{border-left:4px solid var(--ok)}.m.miss{border-left:4px solid var(--ng)}.m.wait{border-left:4px solid var(--line)}
-.mh{display:flex;align-items:center;gap:6px;font-size:.72rem;color:var(--sub)}
+.mh{display:flex;align-items:center;gap:6px;font-size:.72rem;color:var(--sub);flex-wrap:wrap}
 .no{min-width:24px;height:22px;border-radius:7px;background:var(--bg2);color:var(--fg);font-weight:800;display:grid;place-items:center;font-size:.78rem;padding:0 5px}
 .badge{font-size:.66rem;font-weight:700;border-radius:6px;padding:2px 6px}
 .b-solid{background:#dcfce7;color:#166534}.b-close{background:#fef3c7;color:#92400e}.b-val{background:#ffedd5;color:#c2410c}
 .b-ok{background:#dcfce7;color:#166534}.b-ng{background:#fee2e2;color:#991b1b}.b-gray{background:var(--bg2);color:var(--sub)}
-@media(prefers-color-scheme:dark){.b-solid,.b-ok{background:#14321f;color:#86efac}.b-close{background:#3a2c0b;color:#fcd34d}.b-val{background:#3b1d0b;color:#fdba74}.b-ng{background:#3b1414;color:#fca5a5}}
+.b-fix{background:#ede9fe;color:#5b21b6}.b-mk{background:#cffafe;color:#155e75}
+@media(prefers-color-scheme:dark){.b-solid,.b-ok{background:#14321f;color:#86efac}.b-close{background:#3a2c0b;color:#fcd34d}.b-val{background:#3b1d0b;color:#fdba74}.b-ng{background:#3b1414;color:#fca5a5}.b-fix{background:#2e1f52;color:#c4b5fd}.b-mk{background:#0e3440;color:#67e8f9}}
 .vs{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:8px;margin:8px 0 10px}
 .tm{font-weight:700;font-size:.88rem;line-height:1.25;overflow-wrap:anywhere}
 .tm small{display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-top:3px;font-weight:500;font-size:.68rem;color:var(--sub)}
@@ -100,8 +100,11 @@ main{max-width:760px;margin:0 auto;padding:10px 12px}
 .bar div{display:flex;align-items:center;justify-content:center;white-space:nowrap;transition:width .3s}
 .bar div.act{box-shadow:inset 0 0 0 3px #facc15}
 .vbar{display:flex;height:6px;border-radius:4px;overflow:hidden;margin-top:4px;opacity:.45}
-.legend3{display:flex;justify-content:space-between;font-size:.68rem;color:var(--sub);margin-top:5px}
+.mbar{display:flex;height:6px;border-radius:4px;overflow:hidden;margin-top:3px;opacity:.85;outline:1px dashed rgba(14,116,144,.7);outline-offset:1px}
+.legend3{display:flex;justify-content:space-between;font-size:.68rem;color:var(--sub);margin-top:5px;gap:4px}
 .legend3 .val{color:var(--val);font-weight:700}
+.mline{display:flex;justify-content:space-between;font-size:.66rem;color:#0e7490;margin-top:2px}
+@media(prefers-color-scheme:dark){.mline{color:#67e8f9}}
 .more{margin-top:10px;border-top:1px dashed var(--line);padding-top:10px;display:none;font-size:.78rem}
 .m.open .more{display:block}
 .kv{display:grid;grid-template-columns:auto 1fr 1fr;gap:5px 10px;align-items:center}
@@ -118,6 +121,9 @@ main{max-width:760px;margin:0 auto;padding:10px 12px}
 .cmt{margin-top:10px;background:var(--bg2);border-radius:10px;padding:9px 11px;font-size:.78rem;line-height:1.6}
 .cmt b{display:block;font-size:.72rem;color:var(--ng);margin-bottom:2px}
 .cmt ul{margin:0;padding-left:1.1em}
+.fix{margin-top:8px;background:var(--accbg);border-radius:10px;padding:8px 10px;font-size:.74rem;line-height:1.6}
+.fix b{color:var(--acc)}
+.tags{display:flex;gap:4px;flex-wrap:wrap;margin-top:6px}
 
 .adv .advsum{font-size:.82rem;line-height:1.7;margin:4px 0 8px}
 .advlist{list-style:none;margin:0;padding:0}
@@ -125,6 +131,15 @@ main{max-width:760px;margin:0 auto;padding:10px 12px}
 .advno{width:26px;height:22px;border-radius:7px;background:var(--bg2);font-weight:800;display:grid;place-items:center;font-size:.72rem}
 .advpk{color:var(--acc);font-size:.95rem}
 .advlist small{color:var(--sub);font-size:.74rem}
+
+.lesson h3{display:flex;align-items:center;gap:6px}
+.step{display:grid;grid-template-columns:26px 1fr;gap:8px;padding:9px 0;border-top:1px solid var(--line);font-size:.8rem;line-height:1.55}
+.step:first-of-type{border-top:0}
+.sn{width:24px;height:24px;border-radius:50%;background:var(--acc);color:#fff;display:grid;place-items:center;font-weight:800;font-size:.75rem}
+.chk{background:var(--bg2);border-radius:9px;padding:7px 9px;margin:5px 0;font-size:.76rem}
+.chk b{display:block}
+.chk span{display:block;color:var(--sub)}
+.chk em{display:block;font-style:normal;font-weight:700;color:var(--acc);margin-top:2px}
 
 .sheet{width:100%;border-collapse:separate;border-spacing:0 4px;font-size:.8rem}
 .sheet td{padding:4px 3px}
@@ -157,6 +172,8 @@ input.search{width:100%;padding:9px 12px;border:1px solid var(--line);border-rad
 .status div{background:var(--bg2);border-radius:12px;padding:9px 11px}
 .status b{display:block;font-size:1rem}
 .status span{font-size:.68rem;color:var(--sub)}
+.prog{height:8px;border-radius:4px;background:var(--bg2);overflow:hidden;margin:6px 0}
+.prog i{display:block;height:100%;background:#0891b2}
 .feat{display:grid;grid-template-columns:1fr auto;gap:2px 8px;padding:9px 0;border-bottom:1px solid var(--line)}
 .feat:last-child{border:0}
 .feat b{font-size:.85rem}.feat p{grid-column:1/-1;margin:0;font-size:.72rem;color:var(--sub)}
@@ -295,8 +312,8 @@ const OUT3 = ["1","0","2"], OUT4 = ["0","1","2","3"];
 const sum = (a, idx) => idx.reduce((s, k) => s + a[k], 0);
 function slotsOf(K) {
   if (K.kind === "totoGOAL3") return K.rows.flatMap(r => [
-    {p:r.g_h, v:r.v_h, lab:OUT4, key:r.no + "H", r}, {p:r.g_a, v:r.v_a, lab:OUT4, key:r.no + "A", r}]);
-  return K.rows.map(r => ({p:r.p, v:r.v, lab:OUT3, key:String(r.no), r}));
+    {p:r.g_h, v:r.v_h, m:r.m_g_h, lab:OUT4, key:r.no + "H", r}, {p:r.g_a, v:r.v_a, m:r.m_g_a, lab:OUT4, key:r.no + "A", r}]);
+  return K.rows.map(r => ({p:r.p, v:r.v, m:r.m, lab:OUT3, key:String(r.no), r}));
 }
 function buildTicket(slots, units, alpha) {
   const score = (s, idx) => { const P = sum(s.p, idx);
@@ -339,10 +356,21 @@ function left(iso) { if (!iso) return null; const ms = new Date(iso) - Date.now(
 function bar(p, labels, colors, act) {
   return `<div class="bar">` + p.map((x, i) => `<div class="${i === act ? "act" : ""}" style="width:${Math.max(x * 100, .6)}%;background:${colors[i]}">${x >= .13 ? labels[i] + " " + pct(x) : ""}</div>`).join("") + "</div>"; }
 const vbar = (v, colors) => v ? `<div class="vbar">` + v.map((x, i) => `<div style="width:${x * 100}%;background:${colors[i]}"></div>`).join("") + "</div>" : "";
+const mbar = (m, colors) => m ? `<div class="mbar">` + m.map((x, i) => `<div style="width:${x * 100}%;background:${colors[i]}"></div>`).join("") + "</div>" : "";
 const formHtml = f => `<span class="form">${[...(f.marks || "")].map(c => `<i class="f${c}">${{W:"○",D:"△",L:"●"}[c]}</i>`).join("") || "-"}</span>`;
 const tinfo = t => t && t.lg ? `${t.lg} ${t.rank}位` : "";
 const pickColor = lab => ({"1":"var(--c1)","0":"#64748b","2":"var(--c2)"})[lab] || "var(--acc)";
 const md = s => s ? s.slice(5).replace("-", "/") : "";
+const sgn = x => (x > 0 ? "+" : "") + x.toFixed(1);
+const amax = a => a.indexOf(Math.max(...a));
+function reasonText(rs) {
+  return (rs || []).map(r => { const k = r.d.map(Math.abs).indexOf(Math.max(...r.d.map(Math.abs)));
+    return `${esc(r.name)}：${OUT3[k]}を${sgn(r.d[k])}pt`; });
+}
+function standText(st) {
+  if (!st || !st.n) return "-";
+  return `${st.rank}位/${st.n}` + (st.prog >= .5 ? (st.stake ? "・懸かっている" : "・消化試合") : "");
+}
 
 function header() {
   const fresh = D.lag <= 10 ? "var(--ok)" : D.lag <= 21 ? "var(--g2)" : "var(--ng)";
@@ -358,7 +386,7 @@ function render() {
     S.kind = Math.min(S.kind, D.kinds.length - 1);
     h += `<div class="ktabs">` + D.kinds.map((k, i) => `<button class="${i === S.kind ? "on" : ""}" data-k="${i}">${k.kind.replace("mini toto-", "mini ")}</button>`).join("") + `</div>`;
     const K = D.kinds[S.kind], slots = slotsOf(K), T = buildTicket(slots, Math.floor(S.budget / 100), S.alpha);
-    h += hero(K, slots, T) + adviceCard(K, slots, T) + (S.view === "pred" ? predView(K, slots, T) : sheetView(K, slots, T));
+    h += hero(K, slots, T) + appliedCard(K) + adviceCard(K, slots, T) + (S.view === "pred" ? predView(K, slots, T) : sheetView(K, slots, T));
   } else if (S.view === "review") h += reviewView();
   else if (S.view === "teams") h += teamsView();
   else h += modelView();
@@ -405,7 +433,26 @@ function hero(K, slots, T) {
   </div>`;
 }
 
-// ================= おすすめ買い目のコメント =================
+// 外れから学んだ補正と、直前情報（市場・出場停止）の反映
+function appliedCard(K) {
+  if (K.kind === "totoGOAL3") return "";
+  const L = D.learning, ls = (L.lessons || [])[0], mk = L.market || {};
+  const rows = K.rows.filter(r => r.reasons && r.reasons.length);
+  const withM = K.rows.filter(r => r.m).length;
+  const warn = K.rows.filter(r => r.div != null && r.div >= D.diverge);
+  const susp = K.rows.filter(r => r.susp_h || r.susp_a);
+  let h = `<div class="card"><h3>直前情報と学習の反映</h3>`;
+  h += `<p class="desc">WINNERのオッズ（市場）: ${withM}/${K.rows.length}試合で取得・` +
+       (mk.a ? `予想に重み${mk.a}で反映中` : `記録中（${mk.n}/${mk.need}試合で効果を検証して反映）`) +
+       `。出場停止あり: ${susp.length}試合。${ls ? `第${ls.round}回の振り返り（本命 ${ls.hits}/${ls.known}）を含む累積データで補正を検証済み。` : ""}</p>`;
+  if (warn.length) h += `<div class="side" style="align-items:flex-start"><span class="badge b-ng">荒れ注意</span><span style="text-align:right">${warn.map(r => {
+      const a = amax(r.p), b = amax(r.m); return `No.${r.no} ${esc(r.home)}-${esc(r.away)}：予想は${OUT3[a]}、市場は${OUT3[b]}${a === b ? "（確率に差）" : ""}`; }).join("<br>")}</span></div>`;
+  h += rows.slice(0, 13).map(r => `<div class="side" style="align-items:flex-start"><span><b style="color:var(--fg)">No.${r.no}</b> ${esc(r.home)}-${esc(r.away)}</span>
+    <span style="text-align:right">${reasonText(r.reasons).slice(0, 2).join("<br>")}</span></div>`).join("");
+  if (!rows.length && !warn.length) h += `<p class="desc" style="margin:0">今回の対象試合では、補正で大きく動いた試合はありません。</p>`;
+  return h + `</div>`;
+}
+
 function adviceCard(K, slots, T) {
   const isG = K.kind === "totoGOAL3";
   const lab = k => isG ? (k === 3 ? "3+" : String(k)) : OUT3[k];
@@ -428,11 +475,15 @@ function adviceCard(K, slots, T) {
       type = isG ? `${sel.length}点` : "ダブル";
       why = `${sel.map(lab).join("・")}で${pct(cov)}をカバー。${out.map(lab).join("・")}（${out.map(k => pct(p[k])).join("/")}）は切り`;
     }
+    if (s.m) { const mk = amax(s.m);
+      if (!sel.includes(mk)) why += `。市場（WINNER）は${lab(mk)}を${pct(s.m[mk])}で最有力と見ている点に注意`;
+      else if (sel.length === 1 && s.m[mk] >= .5) why += `。市場も${pct(s.m[mk])}で同じ見立て`; }
     if (s.v && !isG) {
       const maj = s.v.indexOf(Math.max(...s.v));
-      if (!sel.includes(maj) && s.v[maj] >= .45) why += `。世間の${pct(s.v[maj])}が推す${lab(maj)}を外す逆張り`;
+      if (!sel.includes(maj) && s.v[maj] >= .45) why += `。toto投票の${pct(s.v[maj])}が推す${lab(maj)}を外す逆張り`;
     }
     if (val.length) why += `。${val.map(lab).join("・")}は投票率より予想が高く妙味あり`;
+    if (!isG && (s.r.susp_h || s.r.susp_a)) why += `。出場停止 ${esc(s.r.home)}${s.r.susp_h}人・${esc(s.r.away)}${s.r.susp_a}人`;
     return {i, s, sel, cov, type, why, risk: sel.length === 1 && sel.length < p.length ? 1 - cov : 0};
   });
   const singles = items.filter(x => x.sel.length === 1 && x.sel.length < x.s.p.length);
@@ -443,40 +494,48 @@ function adviceCard(K, slots, T) {
   if (multi.length) lines.push(`混戦の${multi.map(x => isG ? x.s.key : "No." + x.s.r.no).join("・")}に予算を回し` +
     (singles.length ? `、残り${singles.length}${isG ? "枠" : "試合"}は1点に絞っています。` : `ています。`));
   else lines.push(`予算内では複数選択ができないため、全${isG ? "枠" : "試合"}を確率1位の1点で組んでいます。`);
-  if (weak.length) lines.push(`外れやすいのは ${weak.map(x => `${isG ? x.s.key : "No." + x.s.r.no}（${name(x.s)}、外れる確率${pct(x.risk)}）`).join("、")}。ここが当たるかが勝負どころです。`);
+  if (weak.length) lines.push(`外れやすいのは ${weak.map(x => `${isG ? x.s.key : "No." + x.s.r.no}（${name(x.s)}、外れる確率${pct(x.risk)}）`).join("、")}。`);
   if (T.share !== null) lines.push(T.share < .02
-    ? `当たった場合、同じ組み合わせを当てる人は少なめ（${oneIn(T.share)}）で、配当にも期待できます。`
-    : `人気どおりの組み合わせが多く、当たっても配当は控えめになりやすいです。配当を狙うなら方針を「妙味重視」に。`);
+    ? `当たった場合、同じ組み合わせを当てる人は少なめ（${oneIn(T.share)}）。`
+    : `人気どおりの組み合わせが多く、当たっても配当は控えめになりやすいです。`);
   const steps = [100, 300, 1000, 3000, 10000], nb = steps.find(b => b > S.budget);
   if (nb) { const T2 = buildTicket(slots, Math.floor(nb / 100), S.alpha);
-    if (T2.hit > T.hit * 1.3) lines.push(`予算を${nb.toLocaleString()}円にすると、的中確率は${pct(T.hit, 1)} → ${pct(T2.hit, 1)}に上がります。`); }
+    if (T2.hit > T.hit * 1.3) lines.push(`予算を${nb.toLocaleString()}円にすると、的中確率は${pct(T.hit, 1)} → ${pct(T2.hit, 1)}。`); }
   return `<div class="card adv"><h3>おすすめ買い目の解説</h3>
     <p class="advsum">${lines.map(esc).join("")}</p>
     <ul class="advlist">${items.map(x => `<li><span class="advno">${isG ? x.s.key : x.s.r.no}</span>
       <span><b>${esc(name(x.s))}</b> → <b class="advpk">${x.sel.map(lab).join("")}</b> <span class="badge ${x.type.includes("要注意") ? "b-close" : x.sel.length === 1 ? "b-solid" : "b-gray"}">${x.type}</span><br><small>${esc(x.why)}</small></span></li>`).join("")}</ul></div>`;
 }
 
-function badges(p, v) {
-  const mx = Math.max(...p); let b = "";
+function badges(r) {
+  const p = r.p, v = r.v, mx = Math.max(...p); let b = "";
   if (mx >= .6) b += `<span class="badge b-solid">堅い</span>`; else if (mx < .45) b += `<span class="badge b-close">混戦</span>`;
+  if (r.div != null && r.div >= D.diverge) b += `<span class="badge b-ng">荒れ注意</span>`;
   if (v && p.some((x, k) => x / Math.max(v[k], 1e-3) >= 1.25 && x >= .2)) b += `<span class="badge b-val">妙味</span>`;
+  if (r.susp_h || r.susp_a) b += `<span class="badge b-gray">出場停止 ${r.susp_h}-${r.susp_a}</span>`;
+  if (r.market_used) b += `<span class="badge b-mk">市場反映</span>`;
+  if (r.reasons && r.reasons.some(x => Math.max(...x.d.map(Math.abs)) >= 2)) b += `<span class="badge b-fix">補正あり</span>`;
   return b;
 }
 function details(r) {
   let h = `<dl class="kv">
     <dt></dt><dd><b>${esc(r.home)}</b></dd><dd class="r"><b>${esc(r.away)}</b></dd>
+    <dt>順位</dt><dd>${standText(r.st_h)}</dd><dd class="r">${standText(r.st_a)}</dd>
     <dt>直近5</dt><dd>${formHtml(r.form_h)}</dd><dd class="r">${formHtml(r.form_a)}</dd>
     <dt>勝点(直近5)</dt><dd class="num">${r.form_h.pts}</dd><dd class="r num">${r.form_a.pts}</dd>
-    <dt>得失点</dt><dd class="num">${r.form_h.gf}-${r.form_h.ga}</dd><dd class="r num">${r.form_a.gf}-${r.form_a.ga}</dd>
+    <dt>予想とのずれ</dt><dd class="num">${r.resid_h != null ? sgn(r.resid_h) : "-"}</dd><dd class="r num">${r.resid_a != null ? sgn(r.resid_a) : "-"}</dd>
+    <dt>出場停止</dt><dd class="num">${r.susp_h ?? 0}人</dd><dd class="r num">${r.susp_a ?? 0}人</dd>
     <dt>中○日</dt><dd class="num">${r.rest_h ?? "-"}日</dd><dd class="r num">${r.rest_a ?? "-"}日</dd>
     <dt>Elo</dt><dd class="num">${r.elo_h ?? "-"}</dd><dd class="r num">${r.elo_a ?? "-"}</dd>
     ${r.lam ? `<dt>期待得点</dt><dd class="num">${r.lam[0].toFixed(2)}</dd><dd class="r num">${r.lam[1].toFixed(2)}</dd>` : ""}
   </dl>
   <div class="side"><span>対戦成績（${esc(r.home)}視点）</span><b>${r.h2h}</b></div>`;
+  if (r.m) h += `<div class="side"><span>市場（WINNERのオッズ）</span><span class="num">${r.m.map((x, k) => OUT3[k] + " " + pct(x)).join(" / ")}${r.div != null ? `・食い違い ${pct(r.div)}` : ""}</span></div>`;
   if (r.scores && r.scores.length) h += `<div class="side"><span>出やすいスコア</span></div><div class="sc">${r.scores.map(([a, b, p]) => `<span>${a}-${b}　${pct(p)}</span>`).join("")}</div>`;
-  if (r.p_base && r.p && r.p_base.some((x, i) => Math.abs(x - r.p[i]) >= .005))
-    h += `<div class="side"><span>学習補正</span><span class="num">補正前 ${r.p_base.map(x => pct(x)).join("/")} → 補正後 ${r.p.map(x => pct(x)).join("/")}</span></div>`;
+  if (r.reasons && r.reasons.length)
+    h += `<div class="fix"><b>学習した補正・市場の反映</b><br>${r.p_base ? `補正前 ${r.p_base.map(x => pct(x)).join("/")} → 最終 ${r.p.map(x => pct(x)).join("/")}<br>` : ""}${reasonText(r.reasons).join("<br>")}</div>`;
   if (S.detail && r.p_poi && r.p_elo) h += `<div class="side"><span>モデル別</span><span class="num">ポアソン ${r.p_poi.map(x => pct(x)).join("/")}　Elo ${r.p_elo.map(x => pct(x)).join("/")}</span></div>`;
+  h += `<p class="desc" style="margin:6px 0 0">予想とのずれ＝最近の試合で『予想より1試合あたり何勝点多く（少なく）取ったか』。食い違い＝予想と市場の確率の差の大きさ（${pct(D.diverge)}以上で荒れ注意）。</p>`;
   return h;
 }
 function predView(K, slots, T) {
@@ -485,12 +544,13 @@ function predView(K, slots, T) {
     K.rows.forEach((r, i) => {
       const id = K.kind + r.no, op = S.expand || open.has(id);
       h += `<div class="card m ${op ? "open" : ""}" data-id="${id}">
-        <div class="mh"><span class="no">${r.no}</span>${r.date}(${r.dow}) ${r.time}<span class="chev">▼</span></div>
+        <div class="mh"><span class="no">${r.no}</span>${r.date}(${r.dow}) ${r.time}${r.m_g_h ? `<span class="badge b-mk">市場あり</span>` : ""}<span class="chev">▼</span></div>
         <div class="vs"><div class="tm">${esc(r.home)}<small>${tinfo(r.ti_h)}</small></div><div style="color:var(--sub);font-size:.75rem">vs</div><div class="tm r">${esc(r.away)}<small>${tinfo(r.ti_a)}</small></div></div>`;
-      [[r.g_h, r.v_h, "ホーム"], [r.g_a, r.v_a, "アウェイ"]].forEach(([g, v, side], j) => {
+      [[r.g_h, r.v_h, r.m_g_h, "ホーム"], [r.g_a, r.v_a, r.m_g_a, "アウェイ"]].forEach(([g, v, m, side], j) => {
         const sel = T.picks[2 * i + j];
         h += `<div class="side"><span>${side}の得点</span><span class="picks">${sel.map(k => `<span class="pk" style="background:${C4[k]};width:26px;height:24px;font-size:.8rem">${k === 3 ? "3+" : k}</span>`).join("")}</span></div>`
-          + bar(g, ["0","1","2","3+"], C4) + vbar(v, C4);
+          + bar(g, ["0","1","2","3+"], C4) + vbar(v, C4) + mbar(m, C4)
+          + (m ? `<div class="mline num"><span>市場</span>${m.map((x, k) => `<span>${k === 3 ? "3+" : k}: ${pct(x)}</span>`).join("")}</div>` : "");
       });
       h += (r.note ? `<div class="note">${r.note}</div>` : "") + `<div class="more">${details(r)}</div></div>`;
     });
@@ -500,19 +560,20 @@ function predView(K, slots, T) {
       const legend = OUT3.map((o, k) => { const t = `${o}: ${pct(r.p[k])}${r.v ? ` <span style="opacity:.7">(票${pct(r.v[k])})</span>` : ""}`;
         return r.v && r.p[k] / Math.max(r.v[k], 1e-3) >= 1.25 && r.p[k] >= .2 ? `<span class="val">${t}</span>` : `<span>${t}</span>`; }).join("");
       h += `<div class="card m ${op ? "open" : ""}" data-id="${id}">
-        <div class="mh"><span class="no">${r.no}</span>${r.date}(${r.dow}) ${r.time}${badges(r.p, r.v)}<span class="chev">▼</span></div>
+        <div class="mh"><span class="no">${r.no}</span>${r.date}(${r.dow}) ${r.time}${badges(r)}<span class="chev">▼</span></div>
         <div class="vs">
           <div class="tm">${esc(r.home)}<small>${tinfo(r.ti_h)} ${formHtml(r.form_h)}</small></div>
           <div class="picks">${OUT3.map((o, k) => sel.includes(k) ? `<span class="pk" style="background:${pickColor(o)}">${o}</span>` : "").join("")}</div>
           <div class="tm r">${esc(r.away)}<small>${formHtml(r.form_a)} ${tinfo(r.ti_a)}</small></div>
         </div>
-        ${bar(r.p, ["ホーム","分","アウェイ"], C3)}${vbar(r.v, C3)}
+        ${bar(r.p, ["ホーム","分","アウェイ"], C3)}${vbar(r.v, C3)}${mbar(r.m, C3)}
         <div class="legend3 num">${legend}</div>
+        ${r.m ? `<div class="mline num"><span>市場</span>${r.m.map((x, k) => `<span>${OUT3[k]}: ${pct(x)}</span>`).join("")}</div>` : ""}
         ${r.note ? `<div class="note">${r.note}</div>` : ""}
         <div class="more">${details(r)}</div>
       </div>`;
     });
-    h += `<p class="foot" style="text-align:left">太い帯＝モデル予想、細い帯＝一般の投票率。<span style="color:var(--val);font-weight:700">オレンジ</span>＝予想が投票率の1.25倍以上（人気薄で狙い目）。カードをタップで詳細。</p>`;
+    h += `<p class="foot" style="text-align:left">太い帯＝最終予想、薄い細帯＝toto投票率、点線の細帯＝市場（WINNERのオッズ）。<span style="color:var(--val);font-weight:700">オレンジ</span>＝予想が投票率の1.25倍以上。「荒れ注意」＝予想と市場の見立てが大きく食い違う試合。カードをタップで詳細。</p>`;
   }
   return h;
 }
@@ -526,13 +587,28 @@ function sheetView(K, slots, T) {
       s.p.map((p, k) => { const on = T.picks[i].includes(k), col = isG ? C4[k] : C3[k];
         return `<td style="width:44px"><div class="cell ${on ? "sel" : ""}" style="${on ? `background:${col}` : `background:color-mix(in srgb, ${col} ${Math.round(p * 40)}%, transparent)`}">${labs[k]}<small>${pct(p)}</small></div></td>`; }).join("") + `</tr>`;
   });
-  return h + `</table><p class="desc" style="margin-top:8px">塗りつぶし＝買う選択肢。薄い色ほど可能性が低い（数字はモデル確率）。</p></div>`;
+  return h + `</table><p class="desc" style="margin-top:8px">塗りつぶし＝買う選択肢。薄い色ほど可能性が低い（数字は最終予想の確率）。</p></div>`;
 }
 
 // ================= 振り返り =================
+function lessonCard(ls) {
+  if (!ls) return `<div class="card"><h3>この回から学んだこと</h3><p class="desc" style="margin:0">全試合の結果が出そろうと、外れの分析と次回への反映がここに表示されます。</p></div>`;
+  const tags = (ls.tags || []).map(t => `<span class="badge b-ng">${esc(t.name)} ${t.n}</span>`).join("");
+  const checks = (ls.checks || []).map(c => `<div class="chk"><b>${esc(c.tag)}（${c.n}試合）</b><span>累積で確認: ${esc(c.check)}</span><em>→ ${esc(c.verdict)}</em></div>`).join("");
+  const eff = (ls.effects || []).map(e => `No.${e.no} ${esc(e.match)}：${esc(e.feat)}で${e.out}を${sgn(e.pt)}pt`).join("<br>");
+  return `<div class="card lesson"><h3>第${ls.round}回から学んだこと</h3>
+    <p class="desc">${ls.at} 分析。本命 ${ls.hits}/${ls.known} 的中${ls.draws != null ? `・引き分け ${ls.draws}試合（想定 ${ls.exp_draws}）` : ""}${ls.mk_n ? `・市場の1番人気どおり ${ls.mk_hits}/${ls.mk_n}` : ""}</p>
+    <div class="step"><span class="sn">1</span><div><b>外れの原因（候補）</b><div class="tags">${tags || "<span class='desc'>外れなし</span>"}</div></div></div>
+    <div class="step"><span class="sn">2</span><div><b>累積データで確かめた結果</b>${checks || "<p class='desc'>確認対象なし</p>"}</div></div>
+    <div class="step"><span class="sn">3</span><div><b>予想の作り方の変更</b><ul style="margin:4px 0 0;padding-left:1.1em">${(ls.changes || []).map(c => `<li>${esc(c)}</li>`).join("")}</ul></div></div>
+    <div class="step"><span class="sn">4</span><div><b>次回の予想への反映</b><br>${eff || "<span class='desc'>補正で2pt以上動いた試合はありません</span>"}</div></div>
+  </div>`;
+}
+
 function reviewView() {
   const R = D.reviews || [];
-  if (!R.length) return `<div class="card"><h3>振り返り</h3><p class="desc">まだ振り返れる回がありません。予想した回の試合が終わると、ここに予想と結果の比較が表示されます。</p></div>`;
+  const L = D.learning || {};
+  if (!R.length) return `<div class="card"><h3>振り返り</h3><p class="desc">まだ振り返れる回がありません。</p></div>` + lessonCard((L.lessons || [])[0]);
   S.rkind = Math.min(S.rkind, R.length - 1);
   let h = `<div class="ktabs">` + R.map((k, i) => `<button class="${i === S.rkind ? "on" : ""}" data-rk="${i}">${k.kind.replace("mini toto-", "mini ")}</button>`).join("") + `</div>`;
   const V = R[S.rkind], s = V.summary, isG = V.kind === "totoGOAL3";
@@ -541,11 +617,13 @@ function reviewView() {
     <div class="stats num">
       <div class="stat"><b>${s.hits}/${s.known}</b><span>${isG ? "買い目に入った枠" : "本命的中"}</span></div>
       <div class="stat"><b>${s.ticket}</b><span>1,000円の買い目(${s.ticket_units}口)</span></div>
-      <div class="stat"><b>${s.ll != null && s.ll_base != null ? (s.ll < s.ll_base ? "平均より良" : "平均より悪") : "-"}</b><span>確率の当てはまり</span></div>
+      <div class="stat"><b>${s.mk_n ? `${s.mk_hits}/${s.mk_n}` : (s.ll != null && s.ll_base != null ? (s.ll < s.ll_base ? "平均より良" : "平均より悪") : "-")}</b><span>${s.mk_n ? "市場の1番人気どおり" : "確率の当てはまり"}</span></div>
     </div>
     <div class="htext">${esc(s.summary)}</div>
     <div class="row" style="margin-top:10px"><button class="hbtn ghost" id="missOnly">${S.missOnly ? "すべて表示" : "外れだけ表示"}</button></div>
   </div>`;
+  const ls = (L.lessons || []).find(x => x.round === s.round && x.kind === V.kind) || (!isG ? (L.lessons || []).find(x => x.round === s.round) : null);
+  if (s.complete && !isG) h += lessonCard(ls);
   const rows = V.rows.filter(r => !S.missOnly || r.hit === false);
   rows.forEach(r => {
     const st = r.actual == null ? "wait" : r.hit ? "hit" : "miss";
@@ -555,33 +633,33 @@ function reviewView() {
         <div class="side" style="margin-top:8px"><span><b style="color:var(--fg);font-size:.88rem">${esc(r.team)}</b> の得点</span>
         <span>予想 ${r.picks.map(k => `<span class="pk" style="display:inline-grid;background:${C4[k]};width:24px;height:22px;font-size:.75rem">${k === 3 ? "3+" : k}</span>`).join(" ")}
         → 結果 <b style="font-size:1rem;color:var(--fg)">${r.goals ?? "-"}点</b></span></div>
-        ${bar(r.p, ["0","1","2","3+"], C4, r.actual)}
+        ${bar(r.p, ["0","1","2","3+"], C4, r.actual)}${mbar(r.m, C4)}
         ${r.comments ? `<div class="cmt"><b>分析</b><ul>${r.comments.map(c => `<li>${esc(c)}</li>`).join("")}</ul></div>` : ""}</div>`;
     } else {
       const sc = r.score ? r.score.split("-") : null;
+      const tg = (r.tags || []).map(t => `<span class="badge b-gray">${esc((L.tag_info || {})[t] || t)}</span>`).join("");
       h += `<div class="card m ${st}"><div class="mh"><span class="no">${r.no}</span>${md(r.date)}${badge}${r.in_ticket && !r.hit ? `<span class="badge b-solid">買い目では的中</span>` : ""}</div>
         <div class="vs">
           <div class="tm">${esc(r.home)}<small>予想 <span class="pk" style="display:inline-grid;width:22px;height:22px;font-size:.75rem;background:${pickColor(OUT3[r.pick])}">${OUT3[r.pick]}</span></small></div>
           <div class="score num">${sc ? `${sc[0]} - ${sc[1]}` : "- -"}<small>${r.actual != null ? "結果 " + OUT3[r.actual] : ""}</small></div>
           <div class="tm r">${esc(r.away)}<small>${r.actual != null ? `結果の予想確率 ${pct(r.p_act)}` : ""}</small></div>
         </div>
-        ${bar(r.p, ["ホーム","分","アウェイ"], C3, r.actual)}${vbar(r.v, C3)}
+        ${bar(r.p, ["ホーム","分","アウェイ"], C3, r.actual)}${vbar(r.v, C3)}${mbar(r.m, C3)}
+        ${r.m ? `<div class="mline num"><span>市場</span>${r.m.map((x, k) => `<span>${OUT3[k]}: ${pct(x)}</span>`).join("")}</div>` : ""}
+        ${tg ? `<div class="tags">${tg}</div>` : ""}
         ${r.comments ? `<div class="cmt"><b>なぜ外れたか</b><ul>${r.comments.map(c => `<li>${esc(c)}</li>`).join("")}</ul></div>` : ""}</div>`;
     }
   });
   if (!rows.length) h += `<div class="card"><p class="desc" style="margin:0">外れた試合はありません。</p></div>`;
-  h += `<p class="foot" style="text-align:left">帯の黄色い枠＝実際の結果。帯はその回の予想確率（締切時点で確定したもの）。</p>`;
-  h += learnCard(true);
+  h += `<p class="foot" style="text-align:left">帯の黄色い枠＝実際の結果。点線の細帯＝市場（WINNERのオッズ）。灰色のラベル＝外れの原因の候補（累積データで本当に偏りがあるかを確かめてから補正に使います）。</p>`;
   return h;
 }
 
-function learnCard(compact) {
+function learnCard() {
   const L = D.learning; if (!L) return "";
-  const hist = compact ? L.history.slice(0, 6) : L.history;
-  const ic = {"採用":"b-ok","除外":"b-ng","見送り":"b-gray","候補追加":"b-close","調整":"b-val","開始":"b-gray"};
-  return `<div class="card"><h3>${compact ? "この振り返りで学んだこと" : "学習の記録"}</h3>
-    <p class="desc">外れ方の傾向から「検討要素」を追加し、過去データで効果を検証して、改善したものだけを予想に取り入れます。</p>
-    <ul class="hist">${hist.map(x => `<li><span class="badge ${ic[x.event] || "b-gray"}" style="height:fit-content;white-space:nowrap">${x.event}</span><span>${esc(x.detail)}<small>${x.at}${x.round ? `・第${x.round}回の振り返り後` : ""}</small></span></li>`).join("") || "<li>まだ記録はありません</li>"}</ul></div>`;
+  const ic = {"採用":"b-ok","除外":"b-ng","見送り":"b-gray","重点検証":"b-close","調整":"b-val","開始":"b-gray"};
+  return `<div class="card"><h3>学習の記録</h3>
+    <ul class="hist">${L.history.map(x => `<li><span class="badge ${ic[x.event] || "b-gray"}" style="height:fit-content;white-space:nowrap">${x.event}</span><span>${esc(x.detail)}<small>${x.at}${x.round ? `・第${x.round}回の振り返り後` : ""}</small></span></li>`).join("") || "<li>まだ記録はありません</li>"}</ul></div>`;
 }
 
 // ================= チーム =================
@@ -590,41 +668,73 @@ function teamsView() {
   const q = S.q.trim();
   const rows = D.ratings.filter(r => (S.lg === "all" || r.lg === S.lg) && (!q || r.team.includes(q)));
   const mx = Math.max(...D.ratings.map(r => r.att)), mxd = Math.max(...D.ratings.map(r => r.def));
-  let h = `<div class="card"><h3>チーム力ランキング</h3><p class="desc">Elo＝総合的な強さ。攻撃＝得点の倍率（大きいほど点を取る）、守備＝失点の倍率（小さいほど堅い）。</p>
+  let h = `<div class="card"><h3>チーム力ランキング</h3><p class="desc">Elo＝総合的な強さ。攻撃＝得点の倍率、守備＝失点の倍率（小さいほど堅い）。ずれ＝最近『予想より何勝点多く取っているか』。</p>
     <div class="chips" id="lgchips">${lgs.map(l => `<button data-lg="${l}" class="${S.lg === l ? "on" : ""}">${l === "all" ? "すべて" : l}</button>`).join("")}</div>
     <input class="search" id="q" placeholder="チーム名で検索" value="${esc(S.q)}">
-    <table class="t num"><tr><th>#</th><th style="text-align:left">チーム</th><th>Elo</th><th>攻撃</th><th>守備</th></tr>`;
+    <table class="t num"><tr><th>#</th><th style="text-align:left">チーム</th><th>Elo</th><th>攻撃</th><th>守備</th><th>ずれ</th></tr>`;
   rows.forEach(r => {
     h += `<tr><td style="color:var(--sub)">${S.lg === "all" ? r.lg + "-" : ""}${r.rank}</td><td style="text-align:left;font-weight:700">${esc(r.team)}</td><td>${r.elo}</td>
-      <td><div style="display:flex;align-items:center;gap:5px;justify-content:flex-end">${r.att.toFixed(2)}<div class="mini" style="width:40px"><i style="width:${r.att / mx * 100}%;background:var(--c1)"></i></div></div></td>
-      <td><div style="display:flex;align-items:center;gap:5px;justify-content:flex-end">${r.def.toFixed(2)}<div class="mini" style="width:40px"><i style="width:${Math.min(100, (1 - r.def / mxd) * 100 + 15)}%;background:var(--ok)"></i></div></div></td></tr>`;
+      <td><div style="display:flex;align-items:center;gap:5px;justify-content:flex-end">${r.att.toFixed(2)}<div class="mini" style="width:34px"><i style="width:${r.att / mx * 100}%;background:var(--c1)"></i></div></div></td>
+      <td><div style="display:flex;align-items:center;gap:5px;justify-content:flex-end">${r.def.toFixed(2)}<div class="mini" style="width:34px"><i style="width:${Math.min(100, (1 - r.def / mxd) * 100 + 15)}%;background:var(--ok)"></i></div></div></td>
+      <td style="color:${(r.resid || 0) > .2 ? "var(--ok)" : (r.resid || 0) < -.2 ? "var(--ng)" : "inherit"}">${r.resid != null ? sgn(r.resid) : "-"}</td></tr>`;
   });
   return h + `</table>${rows.length ? "" : `<p class="desc">該当なし</p>`}</div>`;
 }
 
 // ================= 精度・学習 =================
+function marketCard() {
+  const mk = (D.learning || {}).market || {}, ev = mk.eval, L = D.learning;
+  const pr = Math.min(1, (mk.n || 0) / (mk.need || 80));
+  let h = `<div class="card"><h3>直前情報（WINNERのオッズ・出場停止）</h3>
+    <p class="desc">WINNERのスコア別オッズは試合開始10分前まで動く『市場の予想』。全Ｊリーグ試合で記録し、結果と照らして予想に混ぜる重みを学習します（古い試合で決めた重みが新しい試合でも効く場合だけ採用）。</p>
+    <div class="status num">
+      <div><span>オッズを記録した試合</span><b>${mk.rec || 0}</b><span>うち結果あり ${mk.n || 0}</span></div>
+      <div><span>予想への反映</span><b>${mk.a ? `重み ${mk.a}` : "まだ反映なし"}</b><span>${mk.a ? `得点予想は重み ${mk.ag}` : `${mk.need}試合で検証開始`}</span></div>
+    </div>
+    <div class="prog"><i style="width:${pr * 100}%"></i></div>
+    <p class="desc" style="margin:0 0 8px">学習開始まで ${mk.n || 0}/${mk.need} 試合。出場停止の記録 ${L.susp_n || 0}件（補正『出場停止』として毎回検証）。</p>`;
+  if (ev && ev.n) h += `<table class="t num"><tr><th>比較（${ev.n}試合）</th><th>対数損失</th><th>RPS</th><th>本命的中</th></tr>
+    <tr><td>このサイトの予想</td><td>${ev.ll_model.toFixed(3)}</td><td>${ev.rps_model.toFixed(3)}</td><td>${pct(ev.acc_model, 1)}</td></tr>
+    <tr><td>市場（直前）</td><td>${ev.ll_market.toFixed(3)}</td><td>${ev.rps_market.toFixed(3)}</td><td>${pct(ev.acc_market, 1)}</td></tr>
+    <tr><td>市場（記録開始時）</td><td>${ev.ll_first.toFixed(3)}</td><td>-</td><td>-</td></tr></table>
+    <p class="desc" style="margin:6px 0 0">数値は小さいほど良い（本命的中は大きいほど良い）。市場の直前と記録開始時の差＝販売期間中に入った情報の価値。</p>`;
+  return h + `</div>`;
+}
+
 function modelView() {
   const L = D.learning;
   const best = D.backtest.reduce((a, b) => b.ll < a.ll ? b : a);
   const fresh = D.lag <= 10 ? ["OK", "var(--ok)"] : D.lag <= 21 ? ["やや古い", "var(--g2)"] : ["古い", "var(--ng)"];
   const mm = Math.max(...D.monthly.map(m => m[1]));
-  const stCls = {"採用中":"b-ok","検証済み・見送り":"b-gray","検証待ち":"b-close","未着手":"b-gray"};
+  const stCls = {"採用中":"b-ok","検証済み・見送り":"b-gray","検証待ち":"b-close","記録中":"b-mk"};
+  const lvCls = {"確定":"b-ng","監視中":"b-close"};
   const tr = (L.track || []).filter(t => t.kind === "toto" && t.known);
-  let h = `<div class="card"><h3>予想に使っている検討要素</h3>
-    <p class="desc">振り返りのたびに候補を追加・検証します。数値は採用による改善幅（対数損失の減少、＋が改善）。</p>
-    ${L.features.map(f => `<div class="feat"><b>${f.name}</b><span class="badge ${stCls[f.status]}">${f.status}</span>
-      <p>${f.desc}${f.gain != null ? `　<span class="num">効果 ${f.gain >= 0 ? "+" : ""}${f.gain.toFixed(4)}</span>` : ""}${f.since ? `・第${f.since}回の振り返り後に採用` : ""}${f.key === "vote" ? `・学習データ ${L.vote.n}/${L.vote.need}試合${L.vote.b ? `・比率${L.vote.b}` : ""}` : ""}</p></div>`).join("")}
+  const fd = (L.findings || []), fa = (L.findings_after || []);
+  let h = marketCard() + `<div class="card"><h3>診断：予想が外れやすい傾向</h3>
+    <p class="desc">過去全試合の答え合わせ＋toto対象試合の外れの記録（${L.ledger_n}試合、うち締切時点の予想 ${L.ledger_real}試合）から、予想と実際のずれを種類別に調べた結果。</p>
+    ${fd.length ? fd.map(f => `<div class="side" style="align-items:flex-start"><span style="color:var(--fg)">${esc(f.text)}</span><span class="badge ${lvCls[f.level] || "b-gray"}">${f.level}</span></div>`).join("") : "<p class='desc' style='margin:0'>目立った偏りは見つかっていません。</p>"}
+    ${fa.length ? `<p class="desc" style="margin:10px 0 4px">補正後もまだ残っている偏り</p>` + fa.map(f => `<div class="side"><span>${esc(f.text)}</span><span class="badge ${lvCls[f.level] || "b-gray"}">${f.level}</span></div>`).join("") : ""}
+  </div>
+  <div class="card"><h3>補正・情報の一覧</h3>
+    <p class="desc">時間順の答え合わせで、対数損失とRPSが両方改善したものだけ採用。数値は採用による対数損失の改善幅。</p>
+    ${L.features.map(f => `<div class="feat"><b>${f.name}</b><span class="badge ${stCls[f.status] || "b-gray"}">${f.status}</span>
+      <p>${f.desc}${f.gain != null ? `　<span class="num">効果 ${f.gain >= 0 ? "+" : ""}${f.gain.toFixed(4)}</span>` : ""}${f.since ? `・第${f.since}回の振り返り後に採用` : ""}${f.key === "vote" ? `・学習データ ${L.vote.n}/${L.vote.need}試合${L.vote.b ? `・重み${L.vote.b}` : ""}` : ""}</p></div>`).join("")}
   </div>`;
+  const lessons = (L.lessons || []).slice(1);
+  if (lessons.length) h += `<details class="card"><summary style="font-size:.9rem;font-weight:700">過去の回から学んだこと（${lessons.length}回分）</summary>${lessons.map(lessonCard).join("")}</details>`;
   if (tr.length) {
-    h += `<div class="card"><h3>回ごとの成績（toto）</h3><p class="desc">本命の的中率の推移。学習の効果をここで確認できます。</p>
+    h += `<div class="card"><h3>回ごとの成績（toto）</h3><p class="desc">本命の的中数の推移。</p>
       <div class="track">${tr.map(t => `<div><span class="num">${t.hits}/${t.known}</span><i style="height:${t.hits / t.known * 70}%;background:${t.ll != null && t.ll_base != null && t.ll < t.ll_base ? "var(--ok)" : "var(--acc)"}"></i><span>${t.round}${t.reconstructed ? "*" : ""}</span></div>`).join("")}</div>
       <p class="desc" style="margin-top:6px">緑＝確率の当てはまりが平均より良かった回。*＝当時のデータで再現した予想。</p></div>`;
   }
-  h += learnCard(false);
-  h += `<div class="card"><h3>予想の答え合わせ（過去データ）</h3><p class="desc">${D.test}を、それ以前のデータだけで予想した成績。対数損失・Brierは小さいほど良い。</p>
-    <table class="t num"><tr><th>モデル</th><th>対数損失</th><th>Brier</th><th>本命的中</th></tr>
-    ${D.backtest.map(b => `<tr class="${b === best ? "best" : ""}"><td>${b.name}</td><td>${b.ll.toFixed(3)}</td><td>${b.brier.toFixed(3)}</td><td>${pct(b.acc, 1)}</td></tr>`).join("")}</table></div>
-  <div class="card"><h3>確率の当てはまり</h3><p class="desc">青い帯＝表示した確率、オレンジの線＝実際に当たった割合。近いほど確率が信用できます。</p>
+  h += learnCard();
+  const bt = D.by_tier || {};
+  h += `<div class="card"><h3>予想の答え合わせ（時間順の検証）</h3><p class="desc">${D.test}＋toto対象試合を、それ以前のデータだけで予想した成績。</p>
+    <table class="t num"><tr><th>モデル</th><th>対数損失</th><th>RPS</th><th>Brier</th><th>本命的中</th></tr>
+    ${D.backtest.map(b => `<tr class="${b === best ? "best" : ""}"><td>${b.name}</td><td>${b.ll.toFixed(3)}</td><td>${(b.rps ?? 0).toFixed(3)}</td><td>${b.brier.toFixed(3)}</td><td>${pct(b.acc, 1)}</td></tr>`).join("")}</table>
+    ${Object.keys(bt).length ? `<p class="desc" style="margin:10px 0 4px">カテゴリ別（補正後）</p><table class="t num"><tr><th>区分</th><th>引き分け 予想/実際</th><th>本命的中</th><th>RPS</th></tr>
+    ${Object.entries(bt).map(([k, m]) => `<tr><td>${k}</td><td>${pct(m.draw_pred, 1)} / ${pct(m.draw_act, 1)}</td><td>${pct(m.acc, 1)}</td><td>${m.rps.toFixed(3)}</td></tr>`).join("")}</table>` : ""}</div>
+  <div class="card"><h3>確率の当てはまり</h3><p class="desc">青い帯＝表示した確率、オレンジの線＝実際に当たった割合。</p>
     <div class="cal num">${D.calib.map(c => `<span>${c.band}</span><div class="calbar"><i style="width:${c.pred * 100}%"></i><b style="left:calc(${c.act * 100}% - 1px)"></b></div><span style="text-align:right">${c.n}試合</span>`).join("")}</div></div>
   <div class="card"><h3>データの状態</h3>
     <div class="status num">
